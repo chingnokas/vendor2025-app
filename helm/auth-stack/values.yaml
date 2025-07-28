@@ -18,8 +18,8 @@ frontend:
   replicaCount: 2
   
   image:
-    repository: angular-service-portal
-    tag: latest
+    repository: ghcr.io/chingnokas/vendor2025-app/frontend
+    tag: main-9e04b2d
     pullPolicy: IfNotPresent
   
   service:
