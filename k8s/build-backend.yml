@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-source
+  namespace: auth-app
+data:
+  package.json: |
+    {
+      "name": "auth-backend",
+      "version": "1.0.0",
+      "description": "Express backend with JWT authentication",
+      "main": "src/index.js",
+      "scripts": {
+        "start": "node src/index.js",
+        "dev": "nodemon src/index.js"
+      },
+      "dependencies": {
+        "express": "^4.18.2",
+        "jsonwebtoken": "^9.0.2",
+        "bcryptjs": "^2.4.3",
+        "dotenv": "^16.3.1",
+        "mariadb": "^3.0.0",
+        "cors": "^2.8.5",
+        "helmet": "^7.1.0",
+        "morgan": "^1.10.0"
+      },
+      "devDependencies": {
+        "nodemon": "^3.0.2"
+      }
+    }
+  Dockerfile: |
+    FROM node:18-slim
+    
+    WORKDIR /usr/src/app
+    
+    # Copy package files
+    COPY package*.json ./
+    
+    # Install dependencies
+    RUN npm install
+    
+    # Copy source code
+    COPY . .
+    
+    # Create environment file
+    RUN echo "DB_HOST=mariadb-service" > .env && \
+        echo "DB_USER=root" >> .env && \
+        echo "DB_PASSWORD=root" >> .env && \
+        echo "DB_NAME=auth_db" >> .env && \
+        echo "JWT_SECRET=your-secret-key" >> .env && \
+        echo "PORT=3000" >> .env
+    
+    EXPOSE 3000
+    
+    CMD [ "npm", "start" ]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-backend-image
+  namespace: auth-app
+spec:
+  template:
+    spec:
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+        - "--dockerfile=/workspace/Dockerfile"
+        - "--context=/workspace"
+        - "--destination=chingnokas/b-app:latest"
+        - "--cache=true"
+        - "--skip-tls-verify"
+        volumeMounts:
+        - name: backend-source
+          mountPath: /workspace
+        - name: backend-code
+          mountPath: /workspace/src
+      volumes:
+      - name: backend-source
+        configMap:
+          name: backend-source
+      - name: backend-code
+        configMap:
+          name: backend-code
+      restartPolicy: Never
+  backoffLimit: 3
