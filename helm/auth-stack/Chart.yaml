@@ -1,0 +1,39 @@
+apiVersion: v2
+name: auth-stack
+description: Complete authentication stack with Angular frontend, Express.js backend, and MariaDB database
+
+type: application
+
+# Chart version - increment when making changes to the chart
+version: 1.0.0
+
+# Application version - version of the authentication stack
+appVersion: "1.0.0"
+
+# Keywords for easier discovery
+keywords:
+  - authentication
+  - angular
+  - express
+  - mariadb
+  - jwt
+  - full-stack
+
+# Maintainer information
+maintainers:
+  - name: Lyndon
+    email: lyndonwhatney4@gmail.com
+    url: https://github.com/chingnokas
+
+# Home page and sources
+home: https://github.com/chingnokas/vendor2025-app
+sources:
+  - https://github.com/chingnokas/vendor2025-app
+
+# Dependencies (if any external charts are needed)
+dependencies: []
+
+# Annotations
+annotations:
+  category: Authentication
+  licenses: MIT

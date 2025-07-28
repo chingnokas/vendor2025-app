@@ -1,0 +1,17 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "auth-stack.frontend.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "auth-stack.frontend.selectorLabels" . | nindent 4 }}
+  ports:
+    - port: {{ .Values.frontend.service.port }}
+      targetPort: {{ .Values.frontend.service.targetPort }}
+      protocol: TCP
+  type: {{ .Values.frontend.service.type }}
+{{- end }}

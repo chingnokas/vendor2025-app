@@ -1,0 +1,17 @@
+{{- if .Values.mariadb.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-service
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "auth-stack.mariadb.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "auth-stack.mariadb.selectorLabels" . | nindent 4 }}
+  ports:
+    - port: {{ .Values.mariadb.service.port }}
+      targetPort: {{ .Values.mariadb.service.targetPort }}
+      protocol: TCP
+  type: {{ .Values.mariadb.service.type }}
+{{- end }}
