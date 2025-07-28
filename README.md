@@ -107,6 +107,39 @@ kubectl port-forward -n auth-app svc/backend-service 3000:3000 &
 ./k8s/cleanup.sh
 ```
 
+## ⎈ Helm Deployment
+
+### Prerequisites
+- Kubernetes cluster
+- Helm 3.2.0+
+
+### Deploy
+```bash
+# Install the Helm chart
+helm install my-auth-stack ./helm/auth-stack
+
+# Install with custom values
+helm install my-auth-stack ./helm/auth-stack -f custom-values.yaml
+
+# Upgrade existing deployment
+helm upgrade my-auth-stack ./helm/auth-stack
+```
+
+### Automated Helm Deployment
+```bash
+# Deploy with automation script
+./helm/deploy-helm.sh
+
+# Upgrade deployment
+./helm/deploy-helm.sh upgrade
+
+# Check status
+./helm/deploy-helm.sh status
+
+# Uninstall
+./helm/deploy-helm.sh uninstall
+```
+
 ## 🧪 Testing
 
 ### Docker Compose
@@ -171,6 +204,13 @@ PORT=3000
 │   ├── deploy.sh        # Deployment script
 │   ├── cleanup.sh       # Cleanup script
 │   └── test-k8s-stack.sh # Testing script
+├── helm/                 # Helm chart
+│   ├── auth-stack/      # Helm chart directory
+│   │   ├── Chart.yaml   # Chart metadata
+│   │   ├── values.yaml  # Default values
+│   │   └── templates/   # Kubernetes templates
+│   ├── deploy-helm.sh   # Helm deployment script
+│   └── README.md        # Helm documentation
 ├── docker-compose.yml    # Docker Compose configuration
 ├── test-stack.sh        # Docker testing script
 └── README.md
@@ -190,7 +230,8 @@ PORT=3000
 
 1. **Docker Compose** - Perfect for development and testing
 2. **Kubernetes** - Production-ready with scaling and orchestration
-3. **Local Development** - Individual service development
+3. **Helm Chart** - Advanced Kubernetes deployment with easy configuration
+4. **Local Development** - Individual service development
 
 ## 📝 License
 
