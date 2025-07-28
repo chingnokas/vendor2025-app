@@ -140,6 +140,44 @@ helm upgrade my-auth-stack ./helm/auth-stack
 ./helm/deploy-helm.sh uninstall
 ```
 
+## 🔄 GitOps CI/CD Pipeline
+
+### Automated Deployment with GitHub Actions + ArgoCD
+
+The repository includes a complete CI/CD pipeline that automatically builds and deploys your application when code changes are pushed.
+
+#### Setup ArgoCD
+```bash
+# Install ArgoCD and configure the application
+./argocd/setup-argocd.sh
+
+# Access ArgoCD UI
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Visit: https://localhost:8080
+```
+
+#### How it Works
+1. **Push Code Changes** → Triggers GitHub Actions
+2. **Build & Push Images** → Updates container registry
+3. **Update Manifests** → Commits new image tags
+4. **ArgoCD Sync** → Deploys to Kubernetes automatically
+
+#### Trigger Deployment
+```bash
+# Make changes to frontend
+echo "console.log('New feature');" >> src/main.ts
+git add . && git commit -m "feat: add new feature" && git push
+
+# Make changes to backend
+echo "// New API endpoint" >> backend/src/index.js
+git add . && git commit -m "feat: add new API" && git push
+```
+
+#### Monitor Deployment
+- **GitHub Actions**: https://github.com/chingnokas/vendor2025-app/actions
+- **ArgoCD UI**: https://localhost:8080 (after port-forward)
+- **Application Status**: `argocd app get auth-stack`
+
 ## 🧪 Testing
 
 ### Docker Compose
@@ -211,6 +249,15 @@ PORT=3000
 │   │   └── templates/   # Kubernetes templates
 │   ├── deploy-helm.sh   # Helm deployment script
 │   └── README.md        # Helm documentation
+├── argocd/              # GitOps configuration
+│   ├── application.yaml # ArgoCD application
+│   ├── project.yaml     # ArgoCD project
+│   ├── setup-argocd.sh  # ArgoCD setup script
+│   ├── values-production.yaml # Production values
+│   └── README.md        # GitOps documentation
+├── .github/             # GitHub Actions
+│   └── workflows/       # CI/CD workflows
+│       └── ci.yml       # Main CI/CD pipeline
 ├── docker-compose.yml    # Docker Compose configuration
 ├── test-stack.sh        # Docker testing script
 └── README.md
@@ -231,7 +278,8 @@ PORT=3000
 1. **Docker Compose** - Perfect for development and testing
 2. **Kubernetes** - Production-ready with scaling and orchestration
 3. **Helm Chart** - Advanced Kubernetes deployment with easy configuration
-4. **Local Development** - Individual service development
+4. **GitOps with ArgoCD** - Automated CI/CD pipeline with GitHub Actions
+5. **Local Development** - Individual service development
 
 ## 📝 License
 

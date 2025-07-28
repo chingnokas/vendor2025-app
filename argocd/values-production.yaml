@@ -1,0 +1,308 @@
+# Production values for auth-stack Helm chart
+# These values override the default values.yaml for production deployment
+
+global:
+  imageRegistry: ghcr.io
+  imagePullSecrets:
+    - name: ghcr-secret
+
+# Namespace configuration
+namespace:
+  create: true
+  name: auth-app
+
+# Frontend configuration for production
+frontend:
+  enabled: true
+  replicaCount: 3
+  
+  image:
+    repository: ghcr.io/chingnokas/vendor2025-app/frontend
+    tag: latest
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP  # Use ClusterIP with Ingress in production
+    port: 8080
+    targetPort: 80
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Production node scheduling
+  nodeSelector:
+    node-type: frontend
+  
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app
+              operator: In
+              values:
+              - frontend
+          topologyKey: kubernetes.io/hostname
+
+# Backend configuration for production
+backend:
+  enabled: true
+  replicaCount: 3
+  
+  image:
+    repository: ghcr.io/chingnokas/vendor2025-app/backend
+    tag: latest
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+  
+  env:
+    NODE_ENV: production
+    PORT: "3000"
+    DB_HOST: mariadb-service
+    DB_USER: root
+    DB_NAME: auth_db
+  
+  secrets:
+    dbPassword: "CHANGE-ME-PRODUCTION-DB-PASSWORD"
+    jwtSecret: "CHANGE-ME-PRODUCTION-JWT-SECRET"
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Enhanced health checks for production
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  # Production node scheduling
+  nodeSelector:
+    node-type: backend
+  
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app
+              operator: In
+              values:
+              - backend
+          topologyKey: kubernetes.io/hostname
+
+# Database configuration for production
+mariadb:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: mariadb
+    tag: "11.0"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 3306
+    targetPort: 3306
+  
+  auth:
+    rootPassword: "CHANGE-ME-PRODUCTION-DB-PASSWORD"
+    database: auth_db
+    username: auth_user
+    password: "CHANGE-ME-PRODUCTION-USER-PASSWORD"
+  
+  # Production persistence configuration
+  persistence:
+    enabled: true
+    storageClass: "fast-ssd"  # Use fast storage class in production
+    accessMode: ReadWriteOnce
+    size: 50Gi
+  
+  # Enhanced health checks
+  livenessProbe:
+    tcpSocket:
+      port: 3306
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  
+  readinessProbe:
+    tcpSocket:
+      port: 3306
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  
+  # Database node scheduling
+  nodeSelector:
+    node-type: database
+  
+  # Ensure database runs on dedicated nodes
+  tolerations:
+    - key: "database"
+      operator: "Equal"
+      value: "true"
+      effect: "NoSchedule"
+
+# Production ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://yourdomain.com"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+  
+  hosts:
+    - host: auth.yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend-service
+          port: 8080
+        - path: /api
+          pathType: Prefix
+          service: backend-service
+          port: 3000
+  
+  tls:
+    - secretName: auth-tls-secret
+      hosts:
+        - auth.yourdomain.com
+
+# Security context for production
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+podSecurityContext:
+  fsGroup: 1001
+  runAsNonRoot: true
+  runAsUser: 1001
+
+# Service account with minimal permissions
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/auth-stack-role
+  name: auth-stack-sa
+
+# RBAC for production
+rbac:
+  create: true
+
+# Network policies for production security
+networkPolicy:
+  enabled: true
+
+# Pod disruption budget for high availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Horizontal Pod Autoscaler for production scaling
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# ConfigMap with production database schema
+configMap:
+  enabled: true
+  data:
+    schema_sql: |
+      CREATE DATABASE IF NOT EXISTS auth_db;
+      USE auth_db;
+
+      CREATE TABLE IF NOT EXISTS users (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          email VARCHAR(255) NOT NULL UNIQUE,
+          password VARCHAR(255) NOT NULL,
+          role ENUM('user', 'vendor', 'admin') DEFAULT 'user',
+          name VARCHAR(100),
+          reset_token VARCHAR(255) NULL,
+          reset_token_expires BIGINT NULL,
+          email_verified BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_email (email),
+          INDEX idx_role (role),
+          INDEX idx_created_at (created_at)
+      );
+
+      CREATE TABLE IF NOT EXISTS refresh_tokens (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          user_id INT NOT NULL,
+          token VARCHAR(500) NOT NULL,
+          expires_at TIMESTAMP NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          INDEX idx_user_id (user_id),
+          INDEX idx_expires_at (expires_at)
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_logs (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          user_id INT,
+          action VARCHAR(100) NOT NULL,
+          resource VARCHAR(100),
+          ip_address VARCHAR(45),
+          user_agent TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+          INDEX idx_user_id (user_id),
+          INDEX idx_action (action),
+          INDEX idx_created_at (created_at)
+      );

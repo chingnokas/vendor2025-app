@@ -1,0 +1,123 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: auth-stack-project
+  namespace: argocd
+  labels:
+    project: auth-stack
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  description: Project for Authentication Stack applications
+  
+  # Source repositories
+  sourceRepos:
+    - 'https://github.com/chingnokas/vendor2025-app.git'
+    - 'https://github.com/chingnokas/*'
+  
+  # Destination clusters and namespaces
+  destinations:
+    - namespace: auth-app
+      server: https://kubernetes.default.svc
+    - namespace: auth-app-staging
+      server: https://kubernetes.default.svc
+    - namespace: auth-app-dev
+      server: https://kubernetes.default.svc
+  
+  # Cluster resource allow list
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRole
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRoleBinding
+    - group: 'apiextensions.k8s.io'
+      kind: CustomResourceDefinition
+    - group: 'networking.k8s.io'
+      kind: IngressClass
+  
+  # Namespace resource allow list
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: ''
+      kind: PersistentVolumeClaim
+    - group: 'apps'
+      kind: Deployment
+    - group: 'apps'
+      kind: ReplicaSet
+    - group: 'apps'
+      kind: StatefulSet
+    - group: 'apps'
+      kind: DaemonSet
+    - group: 'batch'
+      kind: Job
+    - group: 'batch'
+      kind: CronJob
+    - group: 'networking.k8s.io'
+      kind: Ingress
+    - group: 'networking.k8s.io'
+      kind: NetworkPolicy
+    - group: 'policy'
+      kind: PodDisruptionBudget
+    - group: 'autoscaling'
+      kind: HorizontalPodAutoscaler
+    - group: 'rbac.authorization.k8s.io'
+      kind: Role
+    - group: 'rbac.authorization.k8s.io'
+      kind: RoleBinding
+  
+  # Roles for project access
+  roles:
+    - name: admin
+      description: Admin access to auth-stack project
+      policies:
+        - p, proj:auth-stack-project:admin, applications, *, auth-stack-project/*, allow
+        - p, proj:auth-stack-project:admin, repositories, *, *, allow
+        - p, proj:auth-stack-project:admin, certificates, *, *, allow
+      groups:
+        - auth-stack:admin
+    
+    - name: developer
+      description: Developer access to auth-stack project
+      policies:
+        - p, proj:auth-stack-project:developer, applications, get, auth-stack-project/*, allow
+        - p, proj:auth-stack-project:developer, applications, sync, auth-stack-project/*, allow
+        - p, proj:auth-stack-project:developer, applications, action/*, auth-stack-project/*, allow
+        - p, proj:auth-stack-project:developer, repositories, get, *, allow
+      groups:
+        - auth-stack:developer
+    
+    - name: readonly
+      description: Read-only access to auth-stack project
+      policies:
+        - p, proj:auth-stack-project:readonly, applications, get, auth-stack-project/*, allow
+        - p, proj:auth-stack-project:readonly, repositories, get, *, allow
+      groups:
+        - auth-stack:readonly
+
+  # Sync windows (optional - for maintenance windows)
+  syncWindows:
+    - kind: allow
+      schedule: '0 2 * * *'  # Allow sync at 2 AM daily
+      duration: 2h
+      applications:
+        - '*'
+      manualSync: true
+    - kind: deny
+      schedule: '0 12 * * 1-5'  # Deny sync at noon on weekdays
+      duration: 1h
+      applications:
+        - '*'
+      manualSync: false
+
+  # Signature keys (for signed commits)
+  signatureKeys:
+    - keyID: ABCDEF1234567890
