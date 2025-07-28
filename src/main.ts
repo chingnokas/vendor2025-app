@@ -1,3 +1,5 @@
+// 🚀 CI/CD Pipeline Test - Frontend Changes Detection
+// This comment triggers the GitHub Actions workflow for frontend builds
 import { Component } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';

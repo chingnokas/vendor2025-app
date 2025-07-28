@@ -1,3 +1,5 @@
+// 🚀 CI/CD Pipeline Test - Backend Changes Detection
+// This comment triggers the GitHub Actions workflow for backend builds
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
