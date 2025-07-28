@@ -1,43 +1,43 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: auth-stack
+  name: auth-stack-frontend
   namespace: argocd
   labels:
-    app: auth-stack
+    app: auth-stack-frontend
+    component: frontend
     environment: production
   annotations:
     argocd.argoproj.io/sync-wave: "1"
+    # Refresh every 30 seconds to quickly detect frontend changes
+    argocd.argoproj.io/refresh: "30s"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   
-  # Source configuration
+  # Source configuration - Monitor repository for frontend changes
   source:
     repoURL: https://github.com/chingnokas/vendor2025-app.git
     targetRevision: main
     path: helm/auth-stack
     helm:
-      # Helm-specific configuration
       valueFiles:
         - values.yaml
-      parameters:
-        - name: frontend.image.repository
-          value: ghcr.io/chingnokas/vendor2025-app/frontend
-        - name: backend.image.repository
-          value: ghcr.io/chingnokas/vendor2025-app/backend
-        - name: frontend.image.tag
-          value: latest
-        - name: backend.image.tag
-          value: latest
-      # Override values for production
+      # Override values specifically for frontend deployment
       values: |
-        global:
-          imageRegistry: ghcr.io
-        
+        # Enable only frontend component
         frontend:
+          enabled: true
           replicaCount: 3
+          image:
+            repository: ghcr.io/chingnokas/vendor2025-app/frontend
+            tag: latest
+            pullPolicy: Always
+          service:
+            type: LoadBalancer
+            port: 8080
+            targetPort: 80
           resources:
             limits:
               cpu: 1000m
@@ -46,35 +46,27 @@ spec:
               cpu: 500m
               memory: 512Mi
         
+        # Keep backend and database for full stack
         backend:
-          replicaCount: 3
-          resources:
-            limits:
-              cpu: 1000m
-              memory: 1Gi
-            requests:
-              cpu: 500m
-              memory: 512Mi
-          secrets:
-            jwtSecret: "production-jwt-secret-change-me"
+          enabled: true
+          replicaCount: 2
+          image:
+            repository: chingnokas/b-app
+            tag: latest
+            pullPolicy: IfNotPresent
         
         mariadb:
-          auth:
-            rootPassword: "secure-production-password"
+          enabled: true
+          replicaCount: 1
           persistence:
-            size: 20Gi
-          resources:
-            limits:
-              cpu: 1000m
-              memory: 2Gi
-            requests:
-              cpu: 500m
-              memory: 1Gi
+            enabled: true
+            size: 10Gi
         
+        # Ingress configuration
         ingress:
           enabled: true
           hosts:
-            - host: auth.yourdomain.com
+            - host: auth-app.local
               paths:
                 - path: /
                   pathType: Prefix
@@ -84,17 +76,13 @@ spec:
                   pathType: Prefix
                   service: backend-service
                   port: 3000
-          tls:
-            - secretName: auth-tls
-              hosts:
-                - auth.yourdomain.com
 
   # Destination configuration
   destination:
     server: https://kubernetes.default.svc
     namespace: auth-app
 
-  # Sync policy - Automated for frontend changes
+  # Automated sync policy for frontend changes
   syncPolicy:
     automated:
       prune: true
@@ -105,34 +93,40 @@ spec:
       - PrunePropagationPolicy=foreground
       - PruneLast=true
       - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
     retry:
-      limit: 5
+      limit: 3
       backoff:
         duration: 5s
         factor: 2
-        maxDuration: 3m
-
-  # Refresh interval for checking repository changes
+        maxDuration: 1m
 
   # Health and sync configuration
   revisionHistoryLimit: 10
   
-  # Ignore differences for certain fields
+  # Ignore differences for dynamic fields
   ignoreDifferences:
     - group: apps
       kind: Deployment
+      name: frontend-deployment
       jsonPointers:
         - /spec/replicas
+        - /spec/template/spec/containers/0/image
     - group: ""
-      kind: Secret
+      kind: Service
       jsonPointers:
-        - /data
+        - /spec/clusterIP
+        - /spec/clusterIPs
 
   # Info section
   info:
     - name: Description
-      value: Authentication Stack with Angular, Express.js, and MariaDB
+      value: Frontend component of Authentication Stack - Auto-deploys on frontend changes
     - name: Repository
       value: https://github.com/chingnokas/vendor2025-app
+    - name: Component
+      value: Angular Frontend
+    - name: Auto-Sync
+      value: Enabled for frontend changes
     - name: Maintainer
       value: Lyndon (chingnokas)

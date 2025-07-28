@@ -1,0 +1,177 @@
+name: 🚀 Frontend CI/CD with ArgoCD Auto-Pull
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'angular.json'
+      - 'tsconfig.json'
+      - 'Dockerfile'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'angular.json'
+      - 'tsconfig.json'
+      - 'Dockerfile'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/frontend
+
+jobs:
+  frontend-build-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: 🏷️ Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 🔐 Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏗️ Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔨 Build and push Frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: 📝 Update Helm values for ArgoCD
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # Extract the SHA tag for the main branch
+          NEW_TAG=$(echo "${{ steps.meta.outputs.tags }}" | grep -E "main-[a-f0-9]{7}" | head -1 | cut -d':' -f2)
+          if [ -z "$NEW_TAG" ]; then
+            NEW_TAG="latest"
+          fi
+          
+          echo "🏷️ Updating frontend image tag to: $NEW_TAG"
+          
+          # Update Helm values with new image
+          sed -i "s|repository: angular-service-portal|repository: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}|g" helm/auth-stack/values.yaml
+          sed -i "/frontend:/,/backend:/ { /tag:/ s|tag: .*|tag: $NEW_TAG|; }" helm/auth-stack/values.yaml
+          
+          # Also update k8s deployment if it exists
+          if [ -f "k8s/deployment.yml" ]; then
+            sed -i "s|image: angular-service-portal:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$NEW_TAG|g" k8s/deployment.yml
+          fi
+          
+          echo "✅ Updated deployment manifests with new image tag"
+
+      - name: 📤 Commit updated manifests for ArgoCD
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Add the updated files
+          git add helm/auth-stack/values.yaml
+          git add k8s/deployment.yml || true
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "ℹ️ No changes to commit"
+          else
+            git commit -m "🤖 Update frontend image to ${{ github.sha }}
+
+            - Updated Helm values with new frontend image tag
+            - ArgoCD will automatically detect and pull these changes
+            - Triggered by frontend changes in commit ${{ github.sha }}"
+            
+            git push
+            echo "✅ Pushed updated manifests - ArgoCD will now pull changes"
+          fi
+
+      - name: 🔍 Security scan with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: 📤 Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: 📢 Deployment Summary
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "## 🚀 Frontend Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Frontend image built and pushed successfully**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Image Details:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Registry: \`${{ env.REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository: \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Tags: \`${{ steps.meta.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔄 **ArgoCD Integration:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Helm values updated with new image tag" >> $GITHUB_STEP_SUMMARY
+          echo "- ArgoCD will automatically detect changes and deploy" >> $GITHUB_STEP_SUMMARY
+          echo "- Monitor deployment in ArgoCD UI" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. ArgoCD will pull the updated manifests" >> $GITHUB_STEP_SUMMARY
+          echo "2. New frontend pods will be deployed" >> $GITHUB_STEP_SUMMARY
+          echo "3. Rolling update will ensure zero downtime" >> $GITHUB_STEP_SUMMARY
+
+  # Optional: Trigger ArgoCD sync immediately (if ArgoCD API is configured)
+  trigger-argocd-sync:
+    needs: frontend-build-deploy
+    if: github.ref == 'refs/heads/main' && success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔄 Trigger ArgoCD Application Sync
+        run: |
+          echo "🚀 ArgoCD will automatically detect the manifest changes"
+          echo "📋 Application: auth-stack"
+          echo "🔍 ArgoCD monitors the repository for changes"
+          echo "⏱️ Sync will happen within the configured polling interval"
+          echo ""
+          echo "To manually trigger sync (if ArgoCD CLI is configured):"
+          echo "argocd app sync auth-stack --prune"
+          
+          # Uncomment below if you have ArgoCD API access configured
+          # curl -X POST \
+          #   -H "Authorization: Bearer ${{ secrets.ARGOCD_TOKEN }}" \
+          #   -H "Content-Type: application/json" \
+          #   "${{ secrets.ARGOCD_SERVER }}/api/v1/applications/auth-stack/sync" \
+          #   -d '{"prune": false, "dryRun": false, "strategy": {"hook": {"force": false}}}'

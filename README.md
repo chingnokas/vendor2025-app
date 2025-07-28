@@ -140,43 +140,44 @@ helm upgrade my-auth-stack ./helm/auth-stack
 ./helm/deploy-helm.sh uninstall
 ```
 
-## 🔄 GitOps CI/CD Pipeline
+## 🔄 Frontend GitOps CI/CD Pipeline
 
-### Automated Deployment with GitHub Actions + ArgoCD
+### Automated Frontend Deployment with GitHub Actions + ArgoCD
 
-The repository includes a complete CI/CD pipeline that automatically builds and deploys your application when code changes are pushed.
+The repository includes a frontend-focused CI/CD pipeline that automatically builds and deploys your Angular application when frontend code changes are pushed.
 
-#### Setup ArgoCD
+#### Setup Frontend ArgoCD
 ```bash
-# Install ArgoCD and configure the application
-./argocd/setup-argocd.sh
+# Install ArgoCD and configure frontend auto-deployment
+./argocd/setup-frontend-argocd.sh
 
 # Access ArgoCD UI
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 # Visit: https://localhost:8080
 ```
 
-#### How it Works
-1. **Push Code Changes** → Triggers GitHub Actions
-2. **Build & Push Images** → Updates container registry
-3. **Update Manifests** → Commits new image tags
-4. **ArgoCD Sync** → Deploys to Kubernetes automatically
+#### How Frontend Auto-Deployment Works
+1. **Push Frontend Changes** → Triggers GitHub Actions
+2. **Build Frontend Image** → Creates new Docker image
+3. **Update Helm Values** → Commits new image tag to repository
+4. **ArgoCD Auto-Pull** → Detects changes and deploys automatically
 
-#### Trigger Deployment
+#### Trigger Frontend Deployment
 ```bash
-# Make changes to frontend
-echo "console.log('New feature');" >> src/main.ts
-git add . && git commit -m "feat: add new feature" && git push
+# Make changes to frontend code (Angular)
+echo "console.log('New frontend feature');" >> src/main.ts
+git add src/main.ts
+git commit -m "feat: add new frontend feature"
+git push origin main
 
-# Make changes to backend
-echo "// New API endpoint" >> backend/src/index.js
-git add . && git commit -m "feat: add new API" && git push
+# ArgoCD will automatically detect and deploy the changes!
 ```
 
-#### Monitor Deployment
+#### Monitor Frontend Deployment
 - **GitHub Actions**: https://github.com/chingnokas/vendor2025-app/actions
 - **ArgoCD UI**: https://localhost:8080 (after port-forward)
-- **Application Status**: `argocd app get auth-stack`
+- **Frontend App**: `argocd app get auth-stack-frontend`
+- **Frontend Pods**: `kubectl get pods -n auth-app -l app=frontend`
 
 ## 🧪 Testing
 
