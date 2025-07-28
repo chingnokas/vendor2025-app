@@ -1,5 +1,6 @@
-// 🚀 CI/CD Pipeline Test - Frontend Changes Detection
-// This comment triggers the GitHub Actions workflow for frontend builds
+// 🚀 Frontend-Only CI/CD Pipeline Test
+// This change will trigger GitHub Actions → Build Image → Update Helm → ArgoCD Auto-Pull
+// Testing frontend auto-deployment pipeline
 import { Component } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
