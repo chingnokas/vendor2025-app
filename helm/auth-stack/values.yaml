@@ -15,7 +15,7 @@ namespace:
 # Frontend (Angular) configuration
 frontend:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
   
   image:
     repository: ghcr.io/chingnokas/vendor2025-app/frontend
@@ -29,11 +29,11 @@ frontend:
   
   resources:
     limits:
-      cpu: 500m
-      memory: 512Mi
-    requests:
-      cpu: 250m
+      cpu: 300m
       memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
   
   nodeSelector: {}
   tolerations: []
@@ -42,7 +42,7 @@ frontend:
 # Backend (Express.js) configuration
 backend:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
   
   image:
     repository: chingnokas/b-app
@@ -68,11 +68,11 @@ backend:
   
   resources:
     limits:
-      cpu: 500m
-      memory: 512Mi
-    requests:
-      cpu: 250m
+      cpu: 300m
       memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
   
   # Health checks
   livenessProbe:
@@ -141,11 +141,11 @@ mariadb:
   
   resources:
     limits:
-      cpu: 500m
-      memory: 512Mi
-    requests:
-      cpu: 250m
+      cpu: 200m
       memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
   
   nodeSelector: {}
   tolerations: []
