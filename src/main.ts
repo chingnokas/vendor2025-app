@@ -1,6 +1,7 @@
-// 🚀 Frontend-Only CI/CD Pipeline Test - FIXED WORKFLOW
+// 🚀 Frontend-Only CI/CD Pipeline Test - ARGOCD AUTO-PULL TEST
 // This change will trigger GitHub Actions → Build Image → Update Helm → ArgoCD Auto-Pull
-// Testing frontend auto-deployment pipeline with fixed GitHub Actions workflow
+// Testing ArgoCD auto-pull functionality on Digital Ocean cluster
+// Timestamp: $(date)
 import { Component } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
