@@ -35,4 +35,4 @@ bootstrapApplication(App, {
     provideRouter(routes),
     importProvidersFrom(ReactiveFormsModule)
   ]
-});
+});// GitOps pipeline test
