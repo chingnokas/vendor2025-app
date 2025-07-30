@@ -11,12 +11,11 @@ provider "digitalocean" {
   token = var.do_token
 }
 
-# Get available Kubernetes versions
+# Get available Kubernetes versions (no prefix to see all available)
 data "digitalocean_kubernetes_versions" "auth_stack" {
-  version_prefix = "1.28."
 }
 
-# Simple Kubernetes cluster without VPC first
+# Simple Kubernetes cluster - use the latest available version
 resource "digitalocean_kubernetes_cluster" "auth_stack" {
   name    = var.cluster_name
   region  = var.region
