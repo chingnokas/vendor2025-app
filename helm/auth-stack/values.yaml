@@ -25,7 +25,7 @@ frontend:
   service:
     type: LoadBalancer
     port: 8080
-    targetPort: 80
+    targetPort: 8080
   
   resources:
     limits:
@@ -45,8 +45,8 @@ backend:
   replicaCount: 1
   
   image:
-    repository: chingnokas/b-app
-    tag: latest
+    repository: ghcr.io/chingnokas/vendor2025-app/backend
+    tag: main-latest
     pullPolicy: IfNotPresent
   
   service:
