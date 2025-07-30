@@ -1,5 +1,6 @@
 // 🚀 CI/CD Pipeline Test - Backend Changes Detection
 // This comment triggers the GitHub Actions workflow for backend builds
+// Updated: Testing complete CI/CD pipeline with ArgoCD auto-pull
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
