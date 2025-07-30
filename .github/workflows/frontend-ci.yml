@@ -31,6 +31,7 @@ jobs:
       contents: write
       packages: write
       id-token: write
+      security-events: write
 
     steps:
       - name: 📥 Checkout code
@@ -108,18 +109,14 @@ jobs:
           if git diff --staged --quiet; then
             echo "ℹ️ No changes to commit"
           else
-            git commit -m "🤖 Update frontend image to ${{ github.sha }}
-
-            - Updated Helm values with new frontend image tag
-            - ArgoCD will automatically detect and pull these changes
-            - Triggered by frontend changes in commit ${{ github.sha }}"
+            git commit -m "🤖 Update frontend image to ${{ github.sha }} - Updated Helm values for ArgoCD auto-deployment"
             
             git push
             echo "✅ Pushed updated manifests - ArgoCD will now pull changes"
           fi
 
       - name: 🔍 Security scan with Trivy
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           format: 'sarif'
