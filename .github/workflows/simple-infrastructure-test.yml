@@ -44,7 +44,20 @@ jobs:
         working-directory: infrastructure
         run: |
           echo "🔧 Initializing OpenTofu..."
-          tofu init
+
+          # Set timeout and verbose logging
+          export TF_LOG=INFO
+          export TF_CLI_ARGS_init="-upgrade -no-color"
+
+          # Initialize with timeout
+          timeout 300 tofu init -upgrade -no-color
+
+          if [ $? -eq 124 ]; then
+            echo "❌ OpenTofu init timed out after 5 minutes"
+            exit 1
+          fi
+
+          echo "✅ OpenTofu initialization complete"
 
       - name: 🔍 Validate Configuration
         working-directory: infrastructure

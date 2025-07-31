@@ -1,0 +1,138 @@
+name: ⚡ Quick Infrastructure Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action'
+        required: true
+        default: 'validate'
+        type: choice
+        options:
+        - validate
+        - plan
+        - apply
+
+env:
+  TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+jobs:
+  quick-test:
+    name: ⚡ Quick Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.2
+
+      - name: 🔐 Check Token
+        run: |
+          if [ -z "$TF_VAR_do_token" ]; then
+            echo "❌ No DigitalOcean token found"
+            exit 1
+          fi
+          echo "✅ Token is set (${#TF_VAR_do_token} chars)"
+
+      - name: 📁 Check Files
+        working-directory: infrastructure
+        run: |
+          echo "📁 Infrastructure files:"
+          ls -la
+          echo ""
+          echo "📄 main.tf content:"
+          head -20 main.tf
+
+      - name: ⚡ Quick Init
+        working-directory: infrastructure
+        run: |
+          echo "⚡ Starting OpenTofu init..."
+          
+          # Quick init with timeout
+          timeout 120s tofu init -no-color -input=false
+          
+          if [ $? -eq 124 ]; then
+            echo "❌ Init timed out after 2 minutes"
+            exit 1
+          fi
+          
+          echo "✅ Init completed successfully"
+
+      - name: ✅ Validate
+        working-directory: infrastructure
+        run: |
+          echo "✅ Validating configuration..."
+          tofu validate
+
+      - name: 📋 Plan (if requested)
+        if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+        working-directory: infrastructure
+        run: |
+          echo "📋 Creating plan..."
+          tofu plan -no-color \
+            -var="cluster_name=quick-test-${{ github.run_number }}" \
+            -var="node_count=1" \
+            -var="node_size=s-1vcpu-1gb" \
+            -var="region=nyc1" \
+            -out=tfplan
+
+      - name: 🚀 Apply (if requested)
+        if: github.event.inputs.action == 'apply'
+        working-directory: infrastructure
+        run: |
+          echo "🚀 Applying infrastructure..."
+          tofu apply -auto-approve -no-color tfplan
+          
+          echo "📊 Outputs:"
+          tofu output
+
+      - name: 📊 Summary
+        run: |
+          echo "## ⚡ Quick Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Action:** ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Status:** Success" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.action }}" = "apply" ]; then
+            echo "⚠️ **IMPORTANT:** Cluster created! Remember to destroy it to avoid charges." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To destroy: Run this workflow again with action 'destroy'" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  destroy:
+    name: 💥 Destroy (if needed)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'destroy'
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.2
+
+      - name: ⚡ Quick Init
+        working-directory: infrastructure
+        run: |
+          timeout 120s tofu init -no-color -input=false
+
+      - name: 💥 Destroy
+        working-directory: infrastructure
+        run: |
+          echo "💥 Destroying infrastructure..."
+          tofu destroy -auto-approve -no-color \
+            -var="cluster_name=quick-test-${{ github.run_number }}" \
+            -var="node_count=1" \
+            -var="node_size=s-1vcpu-1gb" \
+            -var="region=nyc1"
+          
+          echo "✅ Infrastructure destroyed"

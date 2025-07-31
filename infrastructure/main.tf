@@ -8,11 +8,10 @@ terraform {
     }
   }
 
-  # Backend configuration for state management
-  backend "s3" {
-    # Configure this for your state backend
-    # For now, using local state
-  }
+  # Using local state for now
+  # backend "s3" {
+  #   # Configure this for your state backend when ready
+  # }
 }
 
 provider "digitalocean" {
