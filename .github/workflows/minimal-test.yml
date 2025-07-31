@@ -1,0 +1,98 @@
+name: 🧪 Minimal OpenTofu Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔐 Check Secret
+        run: |
+          if [ -z "${{ secrets.DIGITALOCEAN_TOKEN }}" ]; then
+            echo "❌ DIGITALOCEAN_TOKEN secret not found"
+            echo "Please add your DigitalOcean token to repository secrets"
+            exit 1
+          else
+            echo "✅ DIGITALOCEAN_TOKEN is configured"
+            echo "Token length: ${#TOKEN} characters"
+          fi
+        env:
+          TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: 🔧 Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.2
+
+      - name: 📋 Check OpenTofu Version
+        run: |
+          echo "OpenTofu version:"
+          tofu version
+
+      - name: 📁 Check Infrastructure Files
+        run: |
+          echo "Infrastructure directory contents:"
+          ls -la infrastructure/
+          echo ""
+          echo "Main configuration:"
+          head -30 infrastructure/main.tf
+
+      - name: ⚡ Test Init (Local Backend Only)
+        working-directory: infrastructure
+        run: |
+          echo "Testing OpenTofu initialization..."
+          
+          # Create a temporary main.tf without backend
+          cat > temp_main.tf << 'EOF'
+          terraform {
+            required_version = ">= 1.0"
+            required_providers {
+              digitalocean = {
+                source  = "digitalocean/digitalocean"
+                version = "~> 2.0"
+              }
+            }
+          }
+          
+          provider "digitalocean" {
+            token = var.do_token
+          }
+          
+          variable "do_token" {
+            description = "Digital Ocean API token"
+            type        = string
+            sensitive   = true
+          }
+          EOF
+          
+          # Test init with timeout
+          echo "Starting init with 60-second timeout..."
+          timeout 60s tofu init -no-color temp_main.tf || {
+            echo "❌ Init failed or timed out"
+            echo "Checking for lock files..."
+            ls -la .terraform* || echo "No terraform files found"
+            exit 1
+          }
+          
+          echo "✅ OpenTofu init successful!"
+          
+          # Clean up
+          rm -f temp_main.tf
+          rm -rf .terraform*
+
+      - name: 📊 Summary
+        run: |
+          echo "## 🎉 Minimal Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **DigitalOcean Token**: Configured" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **OpenTofu**: Installed and working" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Initialization**: Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎯 **Next Steps**: Your OpenTofu setup is working!" >> $GITHUB_STEP_SUMMARY
+          echo "You can now try the full infrastructure deployment." >> $GITHUB_STEP_SUMMARY
