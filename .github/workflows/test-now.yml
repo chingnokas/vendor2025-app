@@ -1,0 +1,40 @@
+name: Test Now
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Test DigitalOcean Token
+        run: |
+          if [ -z "${{ secrets.DIGITALOCEAN_TOKEN }}" ]; then
+            echo "No DigitalOcean token found"
+            exit 1
+          else
+            echo "DigitalOcean token is configured"
+            echo "Token length: ${#TOKEN} characters"
+          fi
+        env:
+          TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.2
+      
+      - name: Test OpenTofu
+        run: |
+          tofu version
+          echo "OpenTofu is working!"
+      
+      - name: Success
+        run: |
+          echo "All tests passed!"
+          echo "Ready for infrastructure deployment"
