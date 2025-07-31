@@ -9,6 +9,7 @@ import { importProvidersFrom } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
+import { HttpClientModule } from '@angular/common/http';
 
 import { HomeComponent } from './app/components/home/home.component';
 import { LoginComponent } from './app/components/login/login.component';
@@ -34,6 +35,6 @@ export class App {}
 bootstrapApplication(App, {
   providers: [
     provideRouter(routes),
-    importProvidersFrom(ReactiveFormsModule)
+    importProvidersFrom(ReactiveFormsModule, HttpClientModule)
   ]
 });// GitOps pipeline test

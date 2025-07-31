@@ -53,3 +53,11 @@ augment-kv-store/
 # Temporary files
 *.tmp
 *.temp
+
+# Terraform
+infrastructure/.terraform/
+infrastructure/.terraform.lock.hcl
+infrastructure/terraform.tfstate
+infrastructure/terraform.tfstate.backup
+infrastructure/*.tfvars
+*.tfplan
