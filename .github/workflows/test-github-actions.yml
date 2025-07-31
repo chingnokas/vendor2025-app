@@ -1,0 +1,128 @@
+name: 🧪 Test GitHub Actions Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test Type'
+        required: true
+        default: 'basic'
+        type: choice
+        options:
+        - basic
+        - secrets
+        - opentofu
+
+jobs:
+  basic-test:
+    name: 🔍 Basic Environment Test
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test_type == 'basic' || github.event.inputs.test_type == 'secrets' || github.event.inputs.test_type == 'opentofu'
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔍 Check repository structure
+        run: |
+          echo "## 📁 Repository Structure" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -la >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 🏗️ Infrastructure Directory" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -la infrastructure/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🔍 Check workflow files
+        run: |
+          echo "## 🔄 Workflow Files" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -la .github/workflows/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  secrets-test:
+    name: 🔐 Secrets Test
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test_type == 'secrets' || github.event.inputs.test_type == 'opentofu'
+    
+    steps:
+      - name: 🔐 Check DigitalOcean token
+        run: |
+          echo "## 🔐 Secrets Check" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ secrets.DIGITALOCEAN_TOKEN }}" ]; then
+            echo "✅ DIGITALOCEAN_TOKEN is set" >> $GITHUB_STEP_SUMMARY
+            echo "Token length: ${#DO_TOKEN} characters" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ DIGITALOCEAN_TOKEN is not set" >> $GITHUB_STEP_SUMMARY
+            echo "Please add your DigitalOcean token to repository secrets" >> $GITHUB_STEP_SUMMARY
+          fi
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+  opentofu-test:
+    name: 🏗️ OpenTofu Test
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test_type == 'opentofu'
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.8.2"
+
+      - name: 🔍 Test OpenTofu installation
+        run: |
+          echo "## 🏗️ OpenTofu Installation" >> $GITHUB_STEP_SUMMARY
+          tofu version >> $GITHUB_STEP_SUMMARY
+
+      - name: 🔍 Validate infrastructure configuration
+        run: |
+          cd infrastructure
+          echo "## 📋 OpenTofu Validation" >> $GITHUB_STEP_SUMMARY
+          
+          # Initialize without backend
+          tofu init -backend=false
+          
+          # Validate configuration
+          if tofu validate; then
+            echo "✅ Infrastructure configuration is valid" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Infrastructure configuration has errors" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Format check
+          if tofu fmt -check -recursive; then
+            echo "✅ Code formatting is correct" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Code formatting needs adjustment" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 🔐 Test with secrets (dry run)
+        run: |
+          cd infrastructure
+          echo "## 🧪 Dry Run Test" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -n "${{ secrets.DIGITALOCEAN_TOKEN }}" ]; then
+            # Test initialization with real token
+            export TF_VAR_do_token="${{ secrets.DIGITALOCEAN_TOKEN }}"
+            
+            if tofu init; then
+              echo "✅ OpenTofu initialization successful" >> $GITHUB_STEP_SUMMARY
+              
+              # Test plan (dry run)
+              if tofu plan -var="cluster_name=test-cluster" -var="node_count=1" -var="node_size=s-1vcpu-1gb"; then
+                echo "✅ OpenTofu plan successful" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "❌ OpenTofu plan failed" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "❌ OpenTofu initialization failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ Cannot test with secrets - DIGITALOCEAN_TOKEN not set" >> $GITHUB_STEP_SUMMARY
+          fi
