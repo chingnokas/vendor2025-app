@@ -19,7 +19,7 @@ frontend:
   
   image:
     repository: ghcr.io/chingnokas/vendor2025-app/frontend
-    tag: main-f3347ff
+    tag: main-d0fe401
     pullPolicy: IfNotPresent
   
   service:
