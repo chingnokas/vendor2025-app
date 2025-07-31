@@ -1,0 +1,135 @@
+name: 🧪 Simple Infrastructure Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'What to do'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+        - plan
+        - apply
+        - destroy
+
+env:
+  TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+jobs:
+  test-infrastructure:
+    name: 🏗️ Test Infrastructure
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.2
+
+      - name: 🔐 Check DigitalOcean Token
+        run: |
+          if [ -z "${{ secrets.DIGITALOCEAN_TOKEN }}" ]; then
+            echo "❌ DIGITALOCEAN_TOKEN secret is not set"
+            exit 1
+          else
+            echo "✅ DIGITALOCEAN_TOKEN is configured"
+            echo "Token length: ${#TF_VAR_do_token} characters"
+          fi
+
+      - name: 🏗️ Initialize OpenTofu
+        working-directory: infrastructure
+        run: |
+          echo "🔧 Initializing OpenTofu..."
+          tofu init
+
+      - name: 🔍 Validate Configuration
+        working-directory: infrastructure
+        run: |
+          echo "✅ Validating OpenTofu configuration..."
+          tofu validate
+
+      - name: 📋 Plan Infrastructure
+        working-directory: infrastructure
+        run: |
+          echo "📋 Creating infrastructure plan..."
+          tofu plan \
+            -var="cluster_name=test-cluster-${{ github.run_number }}" \
+            -var="node_count=2" \
+            -var="node_size=s-2vcpu-4gb" \
+            -var="region=nyc1" \
+            -out=tfplan
+
+      - name: 🚀 Apply Infrastructure
+        if: github.event.inputs.action == 'apply'
+        working-directory: infrastructure
+        run: |
+          echo "🚀 Applying infrastructure..."
+          tofu apply -auto-approve tfplan
+          
+          echo "📊 Getting outputs..."
+          tofu output
+
+      - name: 🧪 Test Cluster (if applied)
+        if: github.event.inputs.action == 'apply'
+        working-directory: infrastructure
+        run: |
+          echo "🧪 Testing cluster connection..."
+          
+          # Get cluster ID
+          CLUSTER_ID=$(tofu output -raw cluster_id)
+          echo "Cluster ID: $CLUSTER_ID"
+          
+          # Install doctl
+          curl -sL https://github.com/digitalocean/doctl/releases/download/v1.104.0/doctl-1.104.0-linux-amd64.tar.gz | tar -xzv
+          sudo mv doctl /usr/local/bin
+          
+          # Configure doctl
+          doctl auth init -t ${{ secrets.DIGITALOCEAN_TOKEN }}
+          
+          # Get kubeconfig
+          doctl kubernetes cluster kubeconfig save $CLUSTER_ID
+          
+          # Test cluster
+          kubectl version --client
+          kubectl get nodes
+          kubectl cluster-info
+
+      - name: 💥 Destroy Infrastructure
+        if: github.event.inputs.action == 'destroy'
+        working-directory: infrastructure
+        run: |
+          echo "💥 Destroying infrastructure..."
+          tofu destroy -auto-approve \
+            -var="cluster_name=test-cluster-${{ github.run_number }}" \
+            -var="node_count=2" \
+            -var="node_size=s-2vcpu-4gb" \
+            -var="region=nyc1"
+
+      - name: 📊 Summary
+        run: |
+          echo "## 🎉 Infrastructure Test Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Success" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.action }}" = "apply" ]; then
+            echo "🏗️ **Infrastructure Created:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Cluster: test-cluster-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Region: nyc1" >> $GITHUB_STEP_SUMMARY
+            echo "- Nodes: 2x s-2vcpu-4gb" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Remember to destroy** the cluster to avoid charges!" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ github.event.inputs.action }}" = "destroy" ]; then
+            echo "💥 **Infrastructure Destroyed**" >> $GITHUB_STEP_SUMMARY
+            echo "- All resources cleaned up" >> $GITHUB_STEP_SUMMARY
+            echo "- No ongoing charges" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "📋 **Plan Created Successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "- Configuration is valid" >> $GITHUB_STEP_SUMMARY
+            echo "- Ready for deployment" >> $GITHUB_STEP_SUMMARY
+          fi

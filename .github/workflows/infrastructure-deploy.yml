@@ -89,18 +89,22 @@ jobs:
             })
 
       - name: 🚀 Apply Infrastructure
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.action == 'apply')
+        if: github.event.inputs.action == 'apply' || github.event_name == 'push'
         run: tofu apply -auto-approve tfplan
 
+      - name: 💥 Destroy Infrastructure
+        if: github.event.inputs.action == 'destroy'
+        run: tofu destroy -auto-approve
+
       - name: 📤 Get Cluster Outputs
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.action == 'apply')
+        if: github.event.inputs.action == 'apply' || github.event_name == 'push'
         id: outputs
         run: |
           echo "cluster_endpoint=$(tofu output -raw cluster_endpoint)" >> $GITHUB_OUTPUT
           echo "cluster_id=$(tofu output -raw cluster_id)" >> $GITHUB_OUTPUT
 
       - name: 📤 Save Kubeconfig
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.action == 'apply')
+        if: github.event.inputs.action == 'apply' || github.event_name == 'push'
         id: kubeconfig
         run: |
           mkdir -p ~/.kube
@@ -110,14 +114,14 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: 🧪 Test Cluster Connection
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.action == 'apply')
+        if: github.event.inputs.action == 'apply' || github.event_name == 'push'
         run: |
           kubectl version --client
           kubectl get nodes
           kubectl cluster-info
 
       - name: 📊 Infrastructure Summary
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.action == 'apply')
+        if: github.event.inputs.action == 'apply' || github.event_name == 'push'
         run: |
           echo "## 🏗️ Infrastructure Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
