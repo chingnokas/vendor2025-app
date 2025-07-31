@@ -54,10 +54,16 @@ augment-kv-store/
 *.tmp
 *.temp
 
-# Terraform
+# Terraform/OpenTofu
 infrastructure/.terraform/
 infrastructure/.terraform.lock.hcl
 infrastructure/terraform.tfstate
 infrastructure/terraform.tfstate.backup
-infrastructure/*.tfvars
-*.tfplan
+infrastructure/*.tfstate
+infrastructure/*.tfstate.backup
+infrastructure/*.tfplan
+infrastructure/kubeconfig-*.yaml
+*.tfvars.json
+
+# Local environment files
+infrastructure/environments/local.tfvars

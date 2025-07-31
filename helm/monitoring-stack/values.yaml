@@ -1,0 +1,194 @@
+# Monitoring Stack Configuration
+global:
+  # Global settings for all monitoring components
+  storageClass: "do-block-storage"  # DigitalOcean block storage
+  
+# Prometheus Configuration
+prometheus:
+  enabled: true
+  
+# Grafana Standalone (if you want separate Grafana)
+grafana:
+  standalone:
+    enabled: false  # We'll use the one from kube-prometheus-stack
+
+# Kube-Prometheus-Stack Configuration
+kube-prometheus-stack:
+  # Prometheus Configuration
+  prometheus:
+    enabled: true
+    prometheusSpec:
+      # Storage configuration
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: do-block-storage
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 10Gi
+      
+      # Resource limits
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1Gi
+        requests:
+          cpu: 250m
+          memory: 512Mi
+      
+      # Retention settings
+      retention: 30d
+      retentionSize: 8GB
+      
+      # Service Monitor selector
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      
+      # Additional scrape configs for your auth-stack
+      additionalScrapeConfigs:
+        - job_name: 'auth-backend'
+          static_configs:
+            - targets: ['backend-service.auth-app.svc.cluster.local:3000']
+          metrics_path: '/metrics'
+          scrape_interval: 30s
+        
+        - job_name: 'auth-frontend'
+          static_configs:
+            - targets: ['frontend-service.auth-app.svc.cluster.local:8080']
+          metrics_path: '/metrics'
+          scrape_interval: 30s
+
+  # Grafana Configuration
+  grafana:
+    enabled: true
+    
+    # Admin credentials
+    adminPassword: "admin123"  # Change in production!
+    
+    # Service configuration
+    service:
+      type: LoadBalancer  # Expose Grafana externally on DigitalOcean
+      port: 80
+      annotations:
+        service.beta.kubernetes.io/do-loadbalancer-name: "grafana-lb"
+        service.beta.kubernetes.io/do-loadbalancer-size-slug: "lb-small"
+    
+    # Persistence
+    persistence:
+      enabled: true
+      storageClassName: do-block-storage
+      size: 5Gi
+    
+    # Resource limits
+    resources:
+      limits:
+        cpu: 300m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+    
+    # Pre-configured dashboards
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+        - name: 'auth-stack'
+          orgId: 1
+          folder: 'Auth Stack'
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/auth-stack
+    
+    # Dashboard configurations
+    dashboards:
+      default:
+        # Kubernetes cluster overview
+        kubernetes-cluster:
+          gnetId: 7249
+          revision: 1
+          datasource: Prometheus
+        
+        # Node exporter dashboard
+        node-exporter:
+          gnetId: 1860
+          revision: 37
+          datasource: Prometheus
+        
+        # Docker container metrics
+        docker-containers:
+          gnetId: 193
+          revision: 4
+          datasource: Prometheus
+      
+      auth-stack:
+        # Custom dashboard for your auth application
+        auth-application:
+          file: dashboards/auth-stack-dashboard.json
+    
+    # Data sources
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://monitoring-stack-kube-prometheus-prometheus:9090
+          access: proxy
+          isDefault: true
+        - name: Loki
+          type: loki
+          url: http://loki:3100
+          access: proxy
+
+  # AlertManager Configuration
+  alertmanager:
+    enabled: true
+    alertmanagerSpec:
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: do-block-storage
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 2Gi
+      
+      resources:
+        limits:
+          cpu: 200m
+          memory: 256Mi
+        requests:
+          cpu: 100m
+          memory: 128Mi
+
+  # Node Exporter (system metrics)
+  nodeExporter:
+    enabled: true
+
+  # Kube State Metrics
+  kubeStateMetrics:
+    enabled: true
+
+  # Prometheus Operator
+  prometheusOperator:
+    enabled: true
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi

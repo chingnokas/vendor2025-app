@@ -1,0 +1,34 @@
+apiVersion: v2
+name: monitoring-stack
+description: Complete monitoring stack with Prometheus and Grafana for auth-stack application
+type: application
+version: 0.1.0
+appVersion: "1.0"
+
+dependencies:
+  # Prometheus Community Helm Chart
+  - name: kube-prometheus-stack
+    version: "61.3.2"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: prometheus.enabled
+
+  # Grafana Helm Chart (if you want standalone Grafana)
+  - name: grafana
+    version: "8.4.2"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: grafana.standalone.enabled
+
+maintainers:
+  - name: "Auth Stack Team"
+    email: "team@authstack.com"
+
+keywords:
+  - monitoring
+  - prometheus
+  - grafana
+  - observability
+  - metrics
+
+home: https://github.com/chingnokas/vendor2025-app
+sources:
+  - https://github.com/chingnokas/vendor2025-app
