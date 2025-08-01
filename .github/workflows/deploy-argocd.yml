@@ -1,0 +1,216 @@
+name: 🔄 Deploy ArgoCD (GitOps)
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'Cluster name (e.g., auth-stack-staging)'
+        required: true
+        default: 'auth-stack-staging'
+        type: string
+      setup_applications:
+        description: 'Setup ArgoCD Applications'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+jobs:
+  deploy-argocd:
+    name: 🔄 Deploy ArgoCD
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Tools
+        run: |
+          # Install doctl
+          curl -sL https://github.com/digitalocean/doctl/releases/download/v1.104.0/doctl-1.104.0-linux-amd64.tar.gz | tar -xzv
+          sudo mv doctl /usr/local/bin
+          doctl auth init -t ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: 🔍 Find and Connect to Cluster
+        run: |
+          echo "🔍 Looking for cluster: ${{ github.event.inputs.cluster_name }}"
+          
+          # List all clusters
+          doctl kubernetes cluster list
+          
+          # Get cluster ID
+          CLUSTER_ID=$(doctl kubernetes cluster list --format ID,Name --no-header | grep "${{ github.event.inputs.cluster_name }}" | awk '{print $1}')
+          
+          if [ -z "$CLUSTER_ID" ]; then
+            echo "❌ Cluster '${{ github.event.inputs.cluster_name }}' not found"
+            echo "Available clusters:"
+            doctl kubernetes cluster list --format Name --no-header
+            exit 1
+          fi
+          
+          echo "✅ Found cluster ID: $CLUSTER_ID"
+          echo "CLUSTER_ID=$CLUSTER_ID" >> $GITHUB_ENV
+          
+          # Get kubeconfig
+          doctl kubernetes cluster kubeconfig save $CLUSTER_ID
+          
+          # Test connection
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: 🔄 Install ArgoCD
+        run: |
+          echo "🔄 Installing ArgoCD..."
+          
+          # Create ArgoCD namespace
+          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Install ArgoCD
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          
+          echo "⏳ Waiting for ArgoCD to be ready..."
+          kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=argocd-server -n argocd --timeout=600s
+          
+          echo "✅ ArgoCD installed successfully"
+
+      - name: 🔧 Configure ArgoCD
+        run: |
+          echo "🔧 Configuring ArgoCD..."
+          
+          # Get ArgoCD admin password
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+          echo "ArgoCD admin password: $ARGOCD_PASSWORD"
+          echo "ARGOCD_PASSWORD=$ARGOCD_PASSWORD" >> $GITHUB_ENV
+          
+          # Patch ArgoCD server service to use LoadBalancer (optional)
+          kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
+          
+          echo "✅ ArgoCD configured"
+
+      - name: 🎯 Setup ArgoCD Applications
+        if: github.event.inputs.setup_applications == 'true'
+        run: |
+          echo "🎯 Setting up ArgoCD Applications..."
+          
+          # Create ArgoCD Application for auth-stack
+          cat <<EOF | kubectl apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: auth-stack-app
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/chingnokas/vendor2025-app.git
+              targetRevision: HEAD
+              path: helm/auth-stack
+              helm:
+                valueFiles:
+                - values.yaml
+                parameters:
+                - name: monitoring.enabled
+                  value: "true"
+                - name: environment
+                  value: "staging"
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: auth-app
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+              - CreateNamespace=true
+              - ApplyOutOfSyncOnly=true
+          EOF
+          
+          # Create ArgoCD Application for monitoring
+          cat <<EOF | kubectl apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: monitoring-stack-app
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/chingnokas/vendor2025-app.git
+              targetRevision: HEAD
+              path: helm/monitoring-stack
+              helm:
+                valueFiles:
+                - values.yaml
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: monitoring
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+              - CreateNamespace=true
+              - ApplyOutOfSyncOnly=true
+          EOF
+          
+          echo "✅ ArgoCD Applications created"
+
+      - name: 🔍 Verify ArgoCD Setup
+        run: |
+          echo "🔍 Verifying ArgoCD setup..."
+          
+          # Check ArgoCD pods
+          kubectl get pods -n argocd
+          
+          # Check ArgoCD applications
+          kubectl get applications -n argocd
+          
+          # Get ArgoCD server service info
+          kubectl get svc argocd-server -n argocd
+          
+          echo "✅ ArgoCD verification complete"
+
+      - name: 📊 ArgoCD Summary
+        run: |
+          echo "## 🔄 ArgoCD Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster:** ${{ github.event.inputs.cluster_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Namespace:** argocd" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Ready" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Access ArgoCD UI" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Port forward to ArgoCD UI" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl port-forward svc/argocd-server -n argocd 8080:443" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Then open: https://localhost:8080" >> $GITHUB_STEP_SUMMARY
+          echo "# Username: admin" >> $GITHUB_STEP_SUMMARY
+          echo "# Password: $ARGOCD_PASSWORD" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.setup_applications }}" = "true" ]; then
+            echo "### 🎯 ArgoCD Applications Created" >> $GITHUB_STEP_SUMMARY
+            echo "- **auth-stack-app**: Manages your application deployment" >> $GITHUB_STEP_SUMMARY
+            echo "- **monitoring-stack-app**: Manages Prometheus + Grafana" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔄 GitOps Workflow" >> $GITHUB_STEP_SUMMARY
+            echo "1. Push changes to your Git repository" >> $GITHUB_STEP_SUMMARY
+            echo "2. ArgoCD automatically detects changes" >> $GITHUB_STEP_SUMMARY
+            echo "3. ArgoCD syncs changes to the cluster" >> $GITHUB_STEP_SUMMARY
+            echo "4. Applications are updated automatically" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 💡 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Access ArgoCD UI using the commands above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify applications are synced and healthy" >> $GITHUB_STEP_SUMMARY
+          echo "3. Make changes to your Helm charts and push to Git" >> $GITHUB_STEP_SUMMARY
+          echo "4. Watch ArgoCD automatically deploy your changes" >> $GITHUB_STEP_SUMMARY
