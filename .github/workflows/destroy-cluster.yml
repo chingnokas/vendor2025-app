@@ -1,0 +1,98 @@
+name: 💥 Destroy Cluster
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'Cluster name to destroy'
+        required: true
+        default: 'auth-stack-staging'
+        type: string
+      confirm:
+        description: 'Type "destroy" to confirm'
+        required: true
+        type: string
+
+env:
+  TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+jobs:
+  destroy:
+    name: 💥 Destroy Infrastructure
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event.inputs.confirm == 'destroy'
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.2
+
+      - name: 🔐 Verify Token
+        run: |
+          if [ -z "$TF_VAR_do_token" ]; then
+            echo "❌ DigitalOcean token not found"
+            exit 1
+          fi
+          echo "✅ DigitalOcean token verified"
+
+      - name: 🏗️ Initialize OpenTofu
+        working-directory: infrastructure
+        run: |
+          echo "🔧 Initializing OpenTofu..."
+          timeout 120s tofu init -no-color -input=false
+          echo "✅ OpenTofu initialized"
+
+      - name: 📋 Show Current State
+        working-directory: infrastructure
+        run: |
+          echo "📋 Current infrastructure state:"
+          tofu state list || echo "No state found"
+
+      - name: 💥 Destroy Infrastructure
+        working-directory: infrastructure
+        run: |
+          echo "💥 Destroying cluster: ${{ github.event.inputs.cluster_name }}"
+          
+          tofu destroy -auto-approve -no-color \
+            -var="cluster_name=${{ github.event.inputs.cluster_name }}" \
+            -var="node_count=2" \
+            -var="node_size=s-2vcpu-4gb" \
+            -var="region=nyc1"
+          
+          echo "✅ Infrastructure destroyed successfully"
+
+      - name: 🧹 Clean State
+        working-directory: infrastructure
+        run: |
+          echo "🧹 Verifying cleanup..."
+          tofu state list || echo "✅ No resources remaining"
+
+      - name: 📊 Summary
+        run: |
+          echo "## 💥 Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cluster Destroyed:** ${{ github.event.inputs.cluster_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Status:** Complete" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cost Impact:** No more charges for this cluster" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎯 **Verification:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Check your DigitalOcean dashboard to confirm cluster is gone" >> $GITHUB_STEP_SUMMARY
+          echo "- No more monthly charges for this infrastructure" >> $GITHUB_STEP_SUMMARY
+
+  safety-check:
+    name: 🛡️ Safety Check
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm != 'destroy'
+    
+    steps:
+      - name: 🛡️ Safety Check Failed
+        run: |
+          echo "❌ Safety check failed"
+          echo "You must type 'destroy' in the confirm field to proceed"
+          echo "This prevents accidental infrastructure destruction"
+          exit 1
