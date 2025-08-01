@@ -1,0 +1,196 @@
+name: 🏗️ Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Infrastructure Action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+        - plan
+        - apply
+        - destroy
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+jobs:
+  infrastructure:
+    name: 🏗️ ${{ github.event.inputs.action }} (${{ github.event.inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.2
+
+      - name: 🔐 Verify Token
+        run: |
+          if [ -z "$TF_VAR_do_token" ]; then
+            echo "❌ DigitalOcean token not found"
+            exit 1
+          fi
+          echo "✅ DigitalOcean token verified (${#TF_VAR_do_token} chars)"
+
+      - name: 🏗️ Initialize OpenTofu
+        working-directory: infrastructure
+        run: |
+          echo "🔧 Initializing OpenTofu..."
+          timeout 120s tofu init -no-color -input=false
+          echo "✅ OpenTofu initialized successfully"
+
+      - name: ✅ Validate Configuration
+        working-directory: infrastructure
+        run: |
+          echo "✅ Validating infrastructure configuration..."
+          tofu validate
+
+      - name: 📋 Plan Infrastructure
+        working-directory: infrastructure
+        run: |
+          echo "📋 Creating infrastructure plan..."
+          
+          # Set variables based on environment
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            NODE_COUNT=3
+            NODE_SIZE="s-4vcpu-8gb"
+          else
+            NODE_COUNT=2
+            NODE_SIZE="s-2vcpu-4gb"
+          fi
+          
+          tofu plan -no-color \
+            -var="cluster_name=auth-stack-${{ github.event.inputs.environment }}" \
+            -var="node_count=${NODE_COUNT}" \
+            -var="node_size=${NODE_SIZE}" \
+            -var="region=nyc1" \
+            -out=tfplan
+          
+          echo "✅ Plan created successfully"
+
+      - name: 🚀 Apply Infrastructure
+        if: github.event.inputs.action == 'apply'
+        working-directory: infrastructure
+        run: |
+          echo "🚀 Applying infrastructure changes..."
+          tofu apply -auto-approve -no-color tfplan
+          echo "✅ Infrastructure applied successfully"
+
+      - name: 📤 Get Cluster Info
+        if: github.event.inputs.action == 'apply'
+        working-directory: infrastructure
+        run: |
+          echo "📤 Getting cluster information..."
+          
+          CLUSTER_ID=$(tofu output -raw cluster_id)
+          CLUSTER_NAME=$(tofu output -raw cluster_name)
+          CLUSTER_ENDPOINT=$(tofu output -raw cluster_endpoint)
+          
+          echo "cluster_id=${CLUSTER_ID}" >> $GITHUB_OUTPUT
+          echo "cluster_name=${CLUSTER_NAME}" >> $GITHUB_OUTPUT
+          echo "cluster_endpoint=${CLUSTER_ENDPOINT}" >> $GITHUB_OUTPUT
+          
+          echo "✅ Cluster ID: ${CLUSTER_ID}"
+          echo "✅ Cluster Name: ${CLUSTER_NAME}"
+          echo "✅ Cluster Endpoint: ${CLUSTER_ENDPOINT}"
+
+      - name: 🧪 Test Cluster Connection
+        if: github.event.inputs.action == 'apply'
+        working-directory: infrastructure
+        run: |
+          echo "🧪 Testing cluster connection..."
+          
+          # Install doctl
+          curl -sL https://github.com/digitalocean/doctl/releases/download/v1.104.0/doctl-1.104.0-linux-amd64.tar.gz | tar -xzv
+          sudo mv doctl /usr/local/bin
+          
+          # Configure doctl
+          doctl auth init -t $TF_VAR_do_token
+          
+          # Get cluster ID and configure kubectl
+          CLUSTER_ID=$(tofu output -raw cluster_id)
+          doctl kubernetes cluster kubeconfig save $CLUSTER_ID
+          
+          # Test cluster
+          kubectl version --client
+          kubectl get nodes
+          kubectl cluster-info
+          
+          echo "✅ Cluster is accessible and ready"
+
+      - name: 💥 Destroy Infrastructure
+        if: github.event.inputs.action == 'destroy'
+        working-directory: infrastructure
+        run: |
+          echo "💥 Destroying infrastructure..."
+          
+          # Set variables based on environment
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            NODE_COUNT=3
+            NODE_SIZE="s-4vcpu-8gb"
+          else
+            NODE_COUNT=2
+            NODE_SIZE="s-2vcpu-4gb"
+          fi
+          
+          tofu destroy -auto-approve -no-color \
+            -var="cluster_name=auth-stack-${{ github.event.inputs.environment }}" \
+            -var="node_count=${NODE_COUNT}" \
+            -var="node_size=${NODE_SIZE}" \
+            -var="region=nyc1"
+          
+          echo "✅ Infrastructure destroyed successfully"
+
+      - name: 📊 Summary
+        run: |
+          echo "## 🎉 Infrastructure ${{ github.event.inputs.action }} Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Success" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.action }}" = "apply" ]; then
+            echo "🏗️ **Infrastructure Created:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Cluster: auth-stack-${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Region: nyc1" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+              echo "- Nodes: 3x s-4vcpu-8gb (~$144/month)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- Nodes: 2x s-2vcpu-4gb (~$48/month)" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Remember:** Run this workflow with 'destroy' action to clean up resources and avoid charges!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🎯 **Next Steps:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Deploy monitoring: Use the monitoring deployment workflow" >> $GITHUB_STEP_SUMMARY
+            echo "2. Deploy applications: Use the application deployment workflow" >> $GITHUB_STEP_SUMMARY
+            
+          elif [ "${{ github.event.inputs.action }}" = "destroy" ]; then
+            echo "💥 **Infrastructure Destroyed**" >> $GITHUB_STEP_SUMMARY
+            echo "- All resources cleaned up" >> $GITHUB_STEP_SUMMARY
+            echo "- No ongoing charges" >> $GITHUB_STEP_SUMMARY
+            
+          else
+            echo "📋 **Plan Created Successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "- Configuration is valid" >> $GITHUB_STEP_SUMMARY
+            echo "- Ready for deployment" >> $GITHUB_STEP_SUMMARY
+            echo "- Run again with 'apply' action to create infrastructure" >> $GITHUB_STEP_SUMMARY
+          fi
