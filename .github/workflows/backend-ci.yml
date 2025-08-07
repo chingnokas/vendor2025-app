@@ -103,23 +103,9 @@ jobs:
       - name: 🔄 Update Helm values
         if: github.ref == 'refs/heads/main'
         run: |
-          # Configure git
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          # Update backend image tag in Helm values (only in backend section)
-          sed -i "/backend:/,/mariadb:/ { /tag:/ s|tag: .*|tag: main-${{ github.sha }}|; }" helm/auth-stack/values.yaml
-          
-          # Check if there are changes
-          if git diff --quiet helm/auth-stack/values.yaml; then
-            echo "ℹ️ No changes to commit"
-          else
-            git add helm/auth-stack/values.yaml
-            git commit -m "🤖 Update backend image to ${{ github.sha }} - Updated Helm values for ArgoCD auto-deployment"
-            
-            git push
-            echo "✅ Pushed updated manifests - ArgoCD will now pull changes"
-          fi
+          echo "ℹ️ Helm values will be updated by full-stack-ci.yml workflow"
+          echo "🏷️ Backend image built: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}"
+          echo "📡 ArgoCD will automatically detect and pull these changes"
 
       - name: 🎯 Trigger ArgoCD sync (optional)
         if: github.ref == 'refs/heads/main'
