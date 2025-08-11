@@ -1,0 +1,312 @@
+# Production Environment Values
+# Override values for production environment
+
+global:
+  imageRegistry: "ghcr.io"
+  imagePullSecrets: []
+  storageClass: "fast-ssd"
+
+# Namespace configuration
+namespace:
+  create: true
+  name: auth-app-prod
+
+# Frontend configuration for production
+frontend:
+  enabled: true
+  replicaCount: 3
+  
+  image:
+    repository: ghcr.io/chingnokas/vendor2025-app/frontend
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: LoadBalancer
+    port: 8080
+    targetPort: 8080
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Production environment variables
+  env:
+    NODE_ENV: production
+    API_URL: https://api.yourdomain.com
+  
+  # Production-grade health checks
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Backend configuration for production
+backend:
+  enabled: true
+  replicaCount: 3
+  
+  image:
+    repository: ghcr.io/chingnokas/vendor2025-app/backend
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+  
+  env:
+    NODE_ENV: production
+    PORT: "3000"
+    DB_HOST: mariadb-service
+    DB_USER: auth_user
+    DB_NAME: auth_db_prod
+    LOG_LEVEL: info
+  
+  # Production secrets (should be managed externally)
+  secrets:
+    dbPassword: ""  # Set via external secret management
+    jwtSecret: ""   # Set via external secret management
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Strict health checks for production
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Database configuration for production
+mariadb:
+  enabled: true
+  replicaCount: 1  # Consider using external managed database for production
+  
+  image:
+    repository: mariadb
+    tag: "11.0"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 3306
+    targetPort: 3306
+  
+  # Production database configuration
+  auth:
+    rootPassword: ""  # Set via external secret management
+    database: auth_db_prod
+    username: auth_user
+    password: ""      # Set via external secret management
+  
+  # Production persistence
+  persistence:
+    enabled: true
+    storageClass: "fast-ssd"
+    accessMode: ReadWriteOnce
+    size: 50Gi
+  
+  # Production health checks
+  livenessProbe:
+    tcpSocket:
+      port: 3306
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    tcpSocket:
+      port: 3306
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 1
+    failureThreshold: 3
+  
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+# Ingress configuration for production
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+  
+  hosts:
+    - host: yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend-service
+          port: 8080
+        - path: /api
+          pathType: Prefix
+          service: backend-service
+          port: 3000
+  
+  tls:
+    - secretName: auth-app-tls
+      hosts:
+        - yourdomain.com
+
+# Production security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1001
+  runAsNonRoot: true
+  runAsUser: 1001
+
+# Enable autoscaling in production
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Enable monitoring in production
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels:
+      environment: production
+
+# Production prometheus rules
+prometheusRules:
+  enabled: true
+  rules:
+    - alert: ProdAuthBackendDown
+      expr: up{job="auth-backend"} == 0
+      for: 30s
+      labels:
+        severity: critical
+        environment: production
+      annotations:
+        summary: "Production auth backend is down"
+        description: "Production auth backend has been down for more than 30 seconds"
+    
+    - alert: ProdHighResponseTime
+      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="auth-backend"}[5m])) > 0.5
+      for: 2m
+      labels:
+        severity: critical
+        environment: production
+      annotations:
+        summary: "Production high response time"
+        description: "95th percentile response time is {{ $value }}s in production"
+    
+    - alert: ProdHighErrorRate
+      expr: rate(http_requests_total{job="auth-backend",status=~"5.."}[5m]) / rate(http_requests_total{job="auth-backend"}[5m]) > 0.01
+      for: 1m
+      labels:
+        severity: critical
+        environment: production
+      annotations:
+        summary: "Production high error rate"
+        description: "Error rate is {{ $value | humanizePercentage }} in production"
+
+# Enable network policies in production
+networkPolicy:
+  enabled: true
+
+# Enable pod disruption budget in production
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Service account with minimal permissions
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT:role/auth-app-role"  # For AWS EKS
+  name: "auth-app-prod"
+
+# RBAC with minimal permissions
+rbac:
+  create: true
+
+# Resource quotas for production namespace
+resourceQuota:
+  enabled: true
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    persistentvolumeclaims: "3"
+    pods: "20"
+    services: "10"
+
+# Limit ranges for production
+limitRange:
+  enabled: true
+  limits:
+    - default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      type: Container
+    - max:
+        cpu: "2"
+        memory: 4Gi
+      min:
+        cpu: 50m
+        memory: 64Mi
+      type: Container

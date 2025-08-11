@@ -172,7 +172,7 @@ jobs:
     name: 🚀 Deploy to Kubernetes
     runs-on: ubuntu-latest
     needs: [detect-changes, frontend-build, backend-build]
-    if: always() && (needs.frontend-build.result == 'success' || needs.backend-build.result == 'success' || needs.detect-changes.outputs.helm-changed == 'true')
+    if: always() && (needs.frontend-build.result == 'success' || needs.frontend-build.result == 'skipped') && (needs.backend-build.result == 'success' || needs.backend-build.result == 'skipped') && (needs.frontend-build.result == 'success' || needs.backend-build.result == 'success' || needs.detect-changes.outputs.helm-changed == 'true')
     
     permissions:
       contents: write
@@ -183,20 +183,120 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🔄 Pull latest changes
-        run: git pull origin main
-
-      - name: 📤 Commit updated manifests
-        if: github.ref == 'refs/heads/main'
+      - name: 🔄 Pull latest changes and handle conflicts
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
+          # Pull latest changes with rebase to handle conflicts
+          git pull --rebase origin main || {
+            echo "⚠️ Merge conflicts detected, resolving..."
+            git status
+            # Reset to latest main if conflicts are too complex
+            git rebase --abort
+            git reset --hard origin/main
+            git pull origin main
+          }
+
+      - name: 🔄 Update Helm values (consolidated)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          UPDATED=false
+          
+          # Update frontend if it was built
+          if [ "${{ needs.frontend-build.result }}" = "success" ]; then
+            NEW_TAG="main-${{ github.sha }}"
+            sed -i "/frontend:/,/backend:/ { /tag:/ s|tag: .*|tag: $NEW_TAG|; }" helm/auth-stack/values.yaml
+            echo "✅ Updated frontend tag to $NEW_TAG"
+            UPDATED=true
+          fi
+          
+          # Update backend if it was built
+          if [ "${{ needs.backend-build.result }}" = "success" ]; then
+            NEW_TAG="main-${{ github.sha }}"
+            sed -i "/backend:/,/mariadb:/ { /tag:/ s|tag: .*|tag: $NEW_TAG|; }" helm/auth-stack/values.yaml
+            echo "✅ Updated backend tag to $NEW_TAG"
+            UPDATED=true
+          fi
+          
+          echo "UPDATED=$UPDATED" >> $GITHUB_ENV
+
+      - name: 📤 Commit updated manifests
+        if: github.ref == 'refs/heads/main' && env.UPDATED == 'true'
+        run: |
           if git diff --quiet helm/auth-stack/values.yaml; then
             echo "ℹ️ No changes to commit"
           else
             git add helm/auth-stack/values.yaml
-            git commit -m "🤖 Update application images to ${{ github.sha }} - Full stack deployment"
+            
+            # Create comprehensive commit message
+            COMMIT_MSG="🤖 Update application images to ${{ github.sha }}"
+            if [ "${{ needs.frontend-build.result }}" = "success" ]; then
+              COMMIT_MSG="$COMMIT_MSG - Frontend"
+            fi
+            if [ "${{ needs.backend-build.result }}" = "success" ]; then
+              COMMIT_MSG="$COMMIT_MSG - Backend"
+            fi
+            
+            git commit -m "$COMMIT_MSG"
+            
+            # Retry push with exponential backoff
+            for i in {1..3}; do
+              if git push; then
+                echo "✅ Pushed updated manifests - ArgoCD will now pull changes"
+                break
+              else
+                echo "⚠️ Push failed, attempt $i/3. Retrying in $((i*2)) seconds..."
+                sleep $((i*2))
+                git pull --rebase origin main
+              fi
+            done
+          fi
+
+      - name: 🔍 Verify ArgoCD Sync (if available)
+        if: github.ref == 'refs/heads/main' && env.UPDATED == 'true'
+        continue-on-error: true
+        run: |
+          echo "🔍 Checking if ArgoCD applications exist..."
+          
+          # Wait for ArgoCD to detect changes (30 seconds)
+          sleep 30
+          
+          # Check if kubectl is available and cluster is accessible
+          if command -v kubectl &> /dev/null; then
+            echo "📊 Checking ArgoCD application status..."
+            
+            # Check if ArgoCD namespace exists
+            if kubectl get namespace argocd &> /dev/null; then
+              # Check application sync status
+              kubectl get applications -n argocd -o wide || echo "⚠️ ArgoCD applications not found"
+            else
+              echo "ℹ️ ArgoCD not installed - manual deployment required"
+            fi
+          else
+            echo "ℹ️ kubectl not available - cannot verify ArgoCD sync"
+          fi
+
+      - name: 🚨 Rollback on Failure
+        if: failure() && github.ref == 'refs/heads/main'
+        run: |
+          echo "🚨 Deployment failed - attempting rollback..."
+          
+          # Get the previous commit
+          PREV_COMMIT=$(git log --oneline -n 2 | tail -1 | cut -d' ' -f1)
+          
+          if [ ! -z "$PREV_COMMIT" ]; then
+            echo "🔄 Rolling back to commit: $PREV_COMMIT"
+            
+            # Reset helm values to previous state
+            git checkout $PREV_COMMIT -- helm/auth-stack/values.yaml
+            
+            # Commit rollback
+            git add helm/auth-stack/values.yaml
+            git commit -m "🚨 Rollback: Deployment failed for ${{ github.sha }}"
             git push
-            echo "✅ Pushed updated manifests - ArgoCD will now pull changes"
+            
+            echo "✅ Rollback completed"
+          else
+            echo "❌ Cannot determine previous commit for rollback"
           fi

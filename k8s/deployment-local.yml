@@ -47,12 +47,10 @@ metadata:
   namespace: auth-app
 type: Opaque
 data:
-  # TODO: Replace with securely generated passwords and base64 encode them
-  # Example: echo -n "your-secure-password" | base64
-  root-password: ""
-  database: ""
-  username: ""
-  password: ""
+  root-password: cm9vdHBhc3MxMjM=
+  database: YXV0aF9kYg==
+  username: YXV0aF91c2Vy
+  password: YXV0aHBhc3MxMjM=
 ---
 
 # Secret for JWT
@@ -63,9 +61,7 @@ metadata:
   namespace: auth-app
 type: Opaque
 data:
-  # TODO: Generate a secure JWT secret and base64 encode it
-  # Example: openssl rand -base64 32 | tr -d "=+/" | cut -c1-25 | base64
-  secret: ""
+  secret: ZStDdTVHdzFiYUhOOGMwNFl3M3NtdDJ6VDNDWXJpa25YeGhMclE4cXRsTT0=
 ---
 
 # PersistentVolumeClaim for MariaDB data
@@ -80,7 +76,6 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  storageClassName: local-path
 ---
 
 # MariaDB Service
@@ -150,7 +145,6 @@ spec:
           mountPath: /var/lib/mysql
         - name: mariadb-init
           mountPath: /docker-entrypoint-initdb.d
-        # Simplified health checks - just check if port is open
         livenessProbe:
           tcpSocket:
             port: 3306
@@ -179,17 +173,6 @@ spec:
           name: mariadb-init-config
 ---
 
-# Backend ServiceAccount
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: auth-app-backend
-  namespace: auth-app
-  labels:
-    app: backend
-automountServiceAccountToken: false
----
-
 # Backend Service
 apiVersion: v1
 kind: Service
@@ -208,7 +191,7 @@ spec:
   type: ClusterIP
 ---
 
-# Backend Deployment
+# Backend Deployment (using local Node.js image for testing)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -216,16 +199,8 @@ metadata:
   namespace: auth-app
   labels:
     app: backend
-    version: v1
-  annotations:
-    deployment.kubernetes.io/revision: "1"
 spec:
-  replicas: 2
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-      maxSurge: 1
+  replicas: 1
   selector:
     matchLabels:
       app: backend
@@ -233,37 +208,29 @@ spec:
     metadata:
       labels:
         app: backend
-        version: v1
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "3000"
-        prometheus.io/path: "/metrics"
     spec:
-      serviceAccountName: auth-app-backend
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1001
-        fsGroup: 1001
       containers:
       - name: backend
-        image: ghcr.io/chingnokas/vendor2025-app/backend:latest
-        imagePullPolicy: IfNotPresent
+        image: node:18-alpine
+        command: ["/bin/sh"]
+        args: ["-c", "echo 'Backend placeholder - real backend image needed' && sleep 3600"]
         ports:
         - containerPort: 3000
-          name: http
-          protocol: TCP
         env:
         - name: NODE_ENV
-          value: "production"
+          value: "development"
         - name: DB_HOST
           value: "mariadb-service"
         - name: DB_USER
-          value: "root"
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secret
+              key: username
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: mariadb-secret
-              key: root-password
+              key: password
         - name: DB_NAME
           valueFrom:
             secretKeyRef:
@@ -276,36 +243,6 @@ spec:
               key: secret
         - name: PORT
           value: "3000"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-            scheme: HTTP
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-          successThreshold: 1
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-            scheme: HTTP
-          initialDelaySeconds: 5
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-          successThreshold: 1
-        startupProbe:
-          httpGet:
-            path: /health
-            port: 3000
-            scheme: HTTP
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 30
-          successThreshold: 1
         resources:
           limits:
             memory: "512Mi"
@@ -313,19 +250,6 @@ spec:
           requests:
             memory: "256Mi"
             cpu: "250m"
-        securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 1001
-          capabilities:
-            drop:
-            - ALL
-        volumeMounts:
-        - name: tmp
-          mountPath: /tmp
-        - name: var-cache
-          mountPath: /var/cache
       initContainers:
       - name: wait-for-db
         image: busybox:1.35
@@ -338,40 +262,6 @@ spec:
               sleep 2
             done
             echo "MariaDB is ready!"
-        securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 1001
-          capabilities:
-            drop:
-            - ALL
-      volumes:
-      - name: tmp
-        emptyDir: {}
-      - name: var-cache
-        emptyDir: {}
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                  - backend
-              topologyKey: kubernetes.io/hostname
-      tolerations:
-      - key: "node.kubernetes.io/not-ready"
-        operator: "Exists"
-        effect: "NoExecute"
-        tolerationSeconds: 300
-      - key: "node.kubernetes.io/unreachable"
-        operator: "Exists"
-        effect: "NoExecute"
-        tolerationSeconds: 300
 ---
 
 # Frontend Service
@@ -401,7 +291,7 @@ metadata:
   labels:
     app: frontend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: frontend
@@ -413,67 +303,17 @@ spec:
       containers:
       - name: frontend
         image: nginx:alpine
-        imagePullPolicy: IfNotPresent
         command: ["/bin/sh"]
-        args: ["-c", "echo '<h1>Frontend placeholder - image needs to be built</h1>' > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'"]
+        args: ["-c", "echo '<h1>Auth App Frontend</h1><p>Backend API: http://backend-service:3000</p><p>Status: Running locally on Rancher Desktop</p>' > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'"]
         ports:
         - containerPort: 80
         env:
-        - name: NODE_ENV
-          value: "production"
         - name: API_URL
           value: "http://backend-service:3000"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 5
-          periodSeconds: 5
-          timeoutSeconds: 3
         resources:
           limits:
-            memory: "512Mi"
-            cpu: "500m"
-          requests:
             memory: "256Mi"
             cpu: "250m"
----
-
-# Ingress for external access
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: auth-app-ingress
-  namespace: auth-app
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
-    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
-spec:
-  rules:
-  - host: auth-app.local
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: frontend-service
-            port:
-              number: 8080
-      - path: /api
-        pathType: Prefix
-        backend:
-          service:
-            name: backend-service
-            port:
-              number: 3000
----
+          requests:
+            memory: "128Mi"
+            cpu: "100m"

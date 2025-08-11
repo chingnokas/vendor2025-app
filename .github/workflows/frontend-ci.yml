@@ -10,6 +10,7 @@ on:
       - 'angular.json'
       - 'tsconfig.json'
       - 'Dockerfile'
+      - '.github/workflows/frontend-ci.yml'
   pull_request:
     branches: [ main ]
     paths:
@@ -76,44 +77,14 @@ jobs:
       - name: 📝 Update Helm values for ArgoCD
         if: github.ref == 'refs/heads/main'
         run: |
-          # Extract the SHA tag for the main branch
-          NEW_TAG=$(echo "${{ steps.meta.outputs.tags }}" | grep -E "main-[a-f0-9]{7}" | head -1 | cut -d':' -f2)
-          if [ -z "$NEW_TAG" ]; then
-            NEW_TAG="latest"
-          fi
-          
-          echo "🏷️ Updating frontend image tag to: $NEW_TAG"
-          
-          # Update Helm values with new image
-          sed -i "s|repository: angular-service-portal|repository: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}|g" helm/auth-stack/values.yaml
-          sed -i "/frontend:/,/backend:/ { /tag:/ s|tag: .*|tag: $NEW_TAG|; }" helm/auth-stack/values.yaml
-          
-          # Also update k8s deployment if it exists
-          if [ -f "k8s/deployment.yml" ]; then
-            sed -i "s|image: angular-service-portal:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$NEW_TAG|g" k8s/deployment.yml
-          fi
-          
-          echo "✅ Updated deployment manifests with new image tag"
+          echo "ℹ️ Helm values will be updated by full-stack-ci.yml workflow"
+          echo "🏷️ Frontend image built: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}"
 
       - name: 📤 Commit updated manifests for ArgoCD
         if: github.ref == 'refs/heads/main'
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          # Add the updated files
-          git add helm/auth-stack/values.yaml
-          git add k8s/deployment.yml || true
-          
-          # Check if there are changes to commit
-          if git diff --staged --quiet; then
-            echo "ℹ️ No changes to commit"
-          else
-            git commit -m "🤖 Update frontend image to ${{ github.sha }} - Updated Helm values for ArgoCD auto-deployment"
-            
-            git push
-            echo "✅ Pushed updated manifests - ArgoCD will now pull changes"
-          fi
+          echo "ℹ️ Manifest updates handled by full-stack-ci.yml to prevent conflicts"
+          echo "✅ Frontend build completed - waiting for consolidated deployment"
 
       - name: 🔍 Security scan with Trivy
         uses: aquasecurity/trivy-action@0.24.0

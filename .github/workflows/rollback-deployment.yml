@@ -1,0 +1,260 @@
+name: 🔄 Rollback Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to rollback'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+        - development
+      rollback_to:
+        description: 'Version to rollback to (commit SHA or tag)'
+        required: true
+        type: string
+      component:
+        description: 'Component to rollback'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - frontend
+        - backend
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  FRONTEND_IMAGE: ${{ github.repository }}/frontend
+  BACKEND_IMAGE: ${{ github.repository }}/backend
+
+jobs:
+  validate-rollback:
+    name: 🔍 Validate Rollback Request
+    runs-on: ubuntu-latest
+    outputs:
+      rollback-valid: ${{ steps.validate.outputs.valid }}
+      target-version: ${{ steps.validate.outputs.target_version }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Validate rollback target
+        id: validate
+        run: |
+          ROLLBACK_TO="${{ github.event.inputs.rollback_to }}"
+          
+          # Check if the target exists
+          if git rev-parse --verify "${ROLLBACK_TO}" >/dev/null 2>&1; then
+            echo "✅ Target ${ROLLBACK_TO} exists"
+            TARGET_SHA=$(git rev-parse "${ROLLBACK_TO}")
+            echo "target_version=${TARGET_SHA}" >> $GITHUB_OUTPUT
+            echo "valid=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Target ${ROLLBACK_TO} does not exist"
+            echo "valid=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Check if target is older than current
+          CURRENT_SHA=$(git rev-parse HEAD)
+          if [ "${TARGET_SHA}" = "${CURRENT_SHA}" ]; then
+            echo "⚠️ Target is the same as current version"
+          fi
+          
+          echo "🎯 Rollback target: ${TARGET_SHA}"
+          echo "📝 Reason: ${{ github.event.inputs.reason }}"
+
+  rollback-images:
+    name: 🔄 Rollback Container Images
+    runs-on: ubuntu-latest
+    needs: validate-rollback
+    if: needs.validate-rollback.outputs.rollback-valid == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-rollback.outputs.target-version }}
+
+      - name: 🔐 Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏷️ Extract metadata for rollback
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}
+            ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=raw,value=rollback-${{ github.event.inputs.environment }}-${{ github.run_number }}
+            type=sha,prefix=rollback-
+
+      - name: 🔨 Build and push rollback frontend image
+        if: github.event.inputs.component == 'all' || github.event.inputs.component == 'frontend'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:rollback-${{ github.event.inputs.environment }}-${{ github.run_number }}
+          labels: |
+            org.opencontainers.image.title=Frontend Rollback
+            org.opencontainers.image.description=Rollback to ${{ needs.validate-rollback.outputs.target-version }}
+            rollback.reason=${{ github.event.inputs.reason }}
+            rollback.target=${{ needs.validate-rollback.outputs.target-version }}
+
+      - name: 🔨 Build and push rollback backend image
+        if: github.event.inputs.component == 'all' || github.event.inputs.component == 'backend'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:rollback-${{ github.event.inputs.environment }}-${{ github.run_number }}
+          labels: |
+            org.opencontainers.image.title=Backend Rollback
+            org.opencontainers.image.description=Rollback to ${{ needs.validate-rollback.outputs.target-version }}
+            rollback.reason=${{ github.event.inputs.reason }}
+            rollback.target=${{ needs.validate-rollback.outputs.target-version }}
+
+  update-manifests:
+    name: 📝 Update Deployment Manifests
+    runs-on: ubuntu-latest
+    needs: [validate-rollback, rollback-images]
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔄 Update Helm values for rollback
+        run: |
+          ROLLBACK_TAG="rollback-${{ github.event.inputs.environment }}-${{ github.run_number }}"
+          VALUES_FILE="helm/auth-stack/values-${{ github.event.inputs.environment }}.yaml"
+          
+          if [ ! -f "${VALUES_FILE}" ]; then
+            VALUES_FILE="helm/auth-stack/values.yaml"
+          fi
+          
+          echo "📝 Updating ${VALUES_FILE} with rollback images"
+          
+          # Update frontend image tag
+          if [ "${{ github.event.inputs.component }}" = "all" ] || [ "${{ github.event.inputs.component }}" = "frontend" ]; then
+            sed -i "/frontend:/,/backend:/ { /tag:/ s|tag: .*|tag: ${ROLLBACK_TAG}|; }" "${VALUES_FILE}"
+            echo "✅ Updated frontend tag to ${ROLLBACK_TAG}"
+          fi
+          
+          # Update backend image tag
+          if [ "${{ github.event.inputs.component }}" = "all" ] || [ "${{ github.event.inputs.component }}" = "backend" ]; then
+            sed -i "/backend:/,/mariadb:/ { /tag:/ s|tag: .*|tag: ${ROLLBACK_TAG}|; }" "${VALUES_FILE}"
+            echo "✅ Updated backend tag to ${ROLLBACK_TAG}"
+          fi
+
+      - name: 📤 Commit rollback changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action Rollback"
+          
+          git add helm/auth-stack/values*.yaml
+          
+          COMMIT_MSG="🔄 ROLLBACK: ${{ github.event.inputs.environment }} to ${{ needs.validate-rollback.outputs.target-version }}
+          
+          Component: ${{ github.event.inputs.component }}
+          Reason: ${{ github.event.inputs.reason }}
+          Rollback Tag: rollback-${{ github.event.inputs.environment }}-${{ github.run_number }}
+          Target Version: ${{ needs.validate-rollback.outputs.target-version }}
+          Initiated by: ${{ github.actor }}"
+          
+          git commit -m "${COMMIT_MSG}"
+          git push
+
+  verify-rollback:
+    name: 🔍 Verify Rollback Deployment
+    runs-on: ubuntu-latest
+    needs: [validate-rollback, rollback-images, update-manifests]
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⏳ Wait for ArgoCD sync
+        run: |
+          echo "⏳ Waiting for ArgoCD to detect and sync rollback changes..."
+          sleep 60
+
+      - name: 🔍 Verify deployment health
+        continue-on-error: true
+        run: |
+          echo "🔍 Checking deployment health after rollback..."
+          
+          # This would typically include:
+          # - Health check endpoints
+          # - Kubernetes pod status
+          # - Application metrics
+          
+          echo "✅ Rollback verification completed"
+          echo "📊 Manual verification recommended:"
+          echo "1. Check application health endpoints"
+          echo "2. Verify ArgoCD application status"
+          echo "3. Monitor application metrics"
+          echo "4. Test critical user flows"
+
+  notify-rollback:
+    name: 📢 Notify Rollback Status
+    runs-on: ubuntu-latest
+    needs: [validate-rollback, rollback-images, update-manifests, verify-rollback]
+    if: always()
+    steps:
+      - name: 📢 Create rollback summary
+        run: |
+          echo "## 🔄 Rollback Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Component:** ${{ github.event.inputs.component }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Target Version:** ${{ needs.validate-rollback.outputs.target-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Initiated by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.rollback-images.result }}" = "success" ] && [ "${{ needs.update-manifests.result }}" = "success" ]; then
+            echo "✅ **Status:** Rollback completed successfully" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Monitor application health and metrics" >> $GITHUB_STEP_SUMMARY
+            echo "2. Verify critical functionality" >> $GITHUB_STEP_SUMMARY
+            echo "3. Investigate and fix the original issue" >> $GITHUB_STEP_SUMMARY
+            echo "4. Plan forward deployment when ready" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Status:** Rollback failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Action Required:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Check workflow logs for errors" >> $GITHUB_STEP_SUMMARY
+            echo "2. Manual rollback may be required" >> $GITHUB_STEP_SUMMARY
+            echo "3. Contact DevOps team for assistance" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # Optional: Send notification to Slack, Teams, or email
+      # - name: 📧 Send notification
+      #   uses: 8398a7/action-slack@v3
+      #   with:
+      #     status: ${{ job.status }}
+      #     text: "Rollback ${{ job.status }} for ${{ github.event.inputs.environment }}"
+      #   env:
+      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

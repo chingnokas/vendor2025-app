@@ -1,0 +1,196 @@
+# Development Environment Values
+# Override values for development environment
+
+global:
+  imageRegistry: "ghcr.io"
+  imagePullSecrets: []
+  storageClass: "local-path"
+
+# Namespace configuration
+namespace:
+  create: true
+  name: auth-app-dev
+
+# Frontend configuration for development
+frontend:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: ghcr.io/chingnokas/vendor2025-app/frontend
+    tag: develop-latest
+    pullPolicy: Always
+  
+  service:
+    type: NodePort
+    port: 8080
+    targetPort: 8080
+    nodePort: 30080
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  
+  # Development-specific environment variables
+  env:
+    NODE_ENV: development
+    API_URL: http://localhost:3000
+
+# Backend configuration for development
+backend:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: ghcr.io/chingnokas/vendor2025-app/backend
+    tag: develop-latest
+    pullPolicy: Always
+  
+  service:
+    type: NodePort
+    port: 3000
+    targetPort: 3000
+    nodePort: 30300
+  
+  env:
+    NODE_ENV: development
+    PORT: "3000"
+    DB_HOST: mariadb-service
+    DB_USER: root
+    DB_NAME: auth_db_dev
+    LOG_LEVEL: debug
+  
+  # Development secrets (less secure for dev)
+  secrets:
+    dbPassword: devpassword123
+    jwtSecret: dev-jwt-secret-not-for-production
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  
+  # Relaxed health checks for development
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+
+# Database configuration for development
+mariadb:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: mariadb
+    tag: "11.0"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: NodePort
+    port: 3306
+    targetPort: 3306
+    nodePort: 30306
+  
+  # Development database configuration
+  auth:
+    rootPassword: devroot123
+    database: auth_db_dev
+    username: dev_user
+    password: devpass123
+  
+  # Smaller persistence for development
+  persistence:
+    enabled: true
+    storageClass: "local-path"
+    accessMode: ReadWriteOnce
+    size: 2Gi
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Ingress configuration for development
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+  
+  hosts:
+    - host: auth-app-dev.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend-service
+          port: 8080
+        - path: /api
+          pathType: Prefix
+          service: backend-service
+          port: 3000
+  
+  tls: []
+
+# Security context (relaxed for development)
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+
+# Disable autoscaling in development
+autoscaling:
+  enabled: false
+
+# Enable monitoring in development
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 60s
+    scrapeTimeout: 30s
+
+# Development-specific prometheus rules
+prometheusRules:
+  enabled: true
+  rules:
+    - alert: DevAuthBackendDown
+      expr: up{job="auth-backend"} == 0
+      for: 5m
+      labels:
+        severity: warning
+        environment: development
+      annotations:
+        summary: "Development auth backend is down"
+        description: "Development auth backend has been down for more than 5 minutes"
+
+# Network policies disabled for easier development
+networkPolicy:
+  enabled: false
+
+# Pod disruption budget disabled for development
+podDisruptionBudget:
+  enabled: false

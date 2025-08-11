@@ -5,6 +5,12 @@
     "ng": "ng",
     "start": "ng serve --port 8080 --host 0.0.0.0",
     "build": "ng build --configuration production",
+    "build:dev": "ng build --configuration development",
+    "test": "ng test --watch=false --browsers=ChromeHeadless --code-coverage",
+    "test:watch": "ng test",
+    "test:ci": "ng test --watch=false --browsers=ChromeHeadless --code-coverage --reporters=progress,kjhtml",
+    "lint": "ng lint",
+    "e2e": "ng e2e",
     "docker:build": "docker build -t angular-service-portal .",
     "docker:run": "docker run -p 8080:8080 angular-service-portal"
   },
@@ -24,6 +30,20 @@
     "@angular/build": "^20.0.0",
     "@angular/cli": "^20.0.0",
     "@angular/compiler-cli": "^20.0.0",
+    "@angular-eslint/builder": "^18.0.0",
+    "@angular-eslint/eslint-plugin": "^18.0.0",
+    "@angular-eslint/eslint-plugin-template": "^18.0.0",
+    "@angular-eslint/schematics": "^18.0.0",
+    "@angular-eslint/template-parser": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "jasmine-core": "^5.1.0",
+    "karma": "^6.4.0",
+    "karma-chrome-headless": "^0.2.3",
+    "karma-coverage": "^2.2.0",
+    "karma-jasmine": "^5.1.0",
+    "karma-jasmine-html-reporter": "^2.1.0",
     "typescript": "^5.8.2"
   }
 }

@@ -2,8 +2,17 @@
 
 This directory contains Kubernetes manifests to deploy the complete authentication stack with:
 - **Frontend**: Angular application
-- **Backend**: Express.js API with JWT authentication  
+- **Backend**: Express.js API with JWT authentication
 - **Database**: MariaDB with persistent storage
+
+## 📋 Deployment Options
+
+### 🏠 Local Development
+For local testing with Rancher Desktop, Docker Desktop, or minikube:
+**👉 See [README-LOCAL-DEPLOYMENT.md](README-LOCAL-DEPLOYMENT.md) for complete local setup guide**
+
+### ☁️ Production Deployment
+Continue with the instructions below for production/cloud deployments.
 
 ## 🚀 Prerequisites
 

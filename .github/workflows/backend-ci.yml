@@ -43,23 +43,32 @@ jobs:
         working-directory: ./backend
         run: npm ci
 
-      - name: 🧪 Run tests (if available)
+      - name: 🔍 Lint code
         working-directory: ./backend
-        run: |
-          if [ -f "package.json" ] && grep -q '"test"' package.json; then
-            npm test
-          else
-            echo "ℹ️ No tests found, skipping test step"
-          fi
+        run: npm run lint
 
-      - name: 🔍 Lint code (if available)
+      - name: 🧪 Run unit tests
         working-directory: ./backend
-        run: |
-          if [ -f "package.json" ] && grep -q '"lint"' package.json; then
-            npm run lint
-          else
-            echo "ℹ️ No linting configured, skipping lint step"
-          fi
+        run: npm test
+
+      - name: 📊 Upload test coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/coverage/lcov.info
+          flags: backend
+          name: backend-coverage
+          fail_ci_if_error: false
+
+      - name: 🧪 Run integration tests
+        working-directory: ./backend
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          DB_HOST: localhost
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: test_db
+          JWT_SECRET: test-jwt-secret
 
       - name: 🔐 Log in to Container Registry
         uses: docker/login-action@v3
