@@ -95,6 +95,7 @@ resource "digitalocean_kubernetes_node_pool" "monitoring_pool" {
     environment = terraform.workspace
     node-type   = "monitoring"
     managed-by  = "opentofu"
+    project     = "auth-stack"
   }
 
   taint {
@@ -103,7 +104,13 @@ resource "digitalocean_kubernetes_node_pool" "monitoring_pool" {
     effect = "NoSchedule"
   }
 
-  tags = ["monitoring", "auth-stack"]
+  tags = concat(var.tags, ["monitoring", "node-pool"])
+
+  depends_on = [digitalocean_kubernetes_cluster.auth_stack]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # VPC for the cluster (optional but recommended)
@@ -121,7 +128,8 @@ resource "digitalocean_firewall" "auth_stack_firewall" {
 
   name = "${var.cluster_name}-firewall"
 
-  tags = [digitalocean_kubernetes_cluster.auth_stack.id]
+  # Apply firewall to cluster nodes using node pool tags
+  tags = concat(var.tags, ["k8s:${digitalocean_kubernetes_cluster.auth_stack.id}"])
 
   # Allow HTTP/HTTPS traffic
   inbound_rule {
@@ -143,6 +151,13 @@ resource "digitalocean_firewall" "auth_stack_firewall" {
     source_addresses = var.ssh_allowed_ips
   }
 
+  # Allow Kubernetes API server access
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "6443"
+    source_addresses = var.ssh_allowed_ips
+  }
+
   # Allow all outbound traffic
   outbound_rule {
     protocol              = "tcp"
@@ -160,4 +175,6 @@ resource "digitalocean_firewall" "auth_stack_firewall" {
     protocol              = "icmp"
     destination_addresses = ["0.0.0.0/0", "::/0"]
   }
+
+  depends_on = [digitalocean_kubernetes_cluster.auth_stack]
 }

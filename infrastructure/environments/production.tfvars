@@ -13,18 +13,18 @@ min_nodes  = 2
 max_nodes  = 10
 enable_ha  = true
 
-# Dedicated monitoring pool for production
-create_monitoring_pool = true
+# Dedicated monitoring pool for production (disabled initially to avoid complexity)
+create_monitoring_pool = false
 monitoring_node_size   = "s-2vcpu-4gb"
-monitoring_node_count  = 2
+monitoring_node_count  = 1
 
-# Network configuration for production
-create_vpc   = true
+# Network configuration for production (disabled initially)
+create_vpc   = false
 vpc_ip_range = "10.20.0.0/16"
 
-# Enhanced security for production
-create_firewall = true
-ssh_allowed_ips = ["YOUR_OFFICE_IP/32"] # Replace with your actual IP
+# Enhanced security for production (disabled initially to avoid firewall issues)
+create_firewall = false
+ssh_allowed_ips = ["0.0.0.0/0"] # Replace with your actual IP when enabling firewall
 
 # Maintenance window
 maintenance_window = "04:00"

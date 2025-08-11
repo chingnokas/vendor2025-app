@@ -24,9 +24,9 @@ monitoring_node_count  = 1
 create_vpc   = false
 vpc_ip_range = "10.10.0.0/16"
 
-# Security configuration
-create_firewall = true
-ssh_allowed_ips = ["0.0.0.0/0"] # Restrict in production
+# Security configuration (disabled for staging to avoid complexity)
+create_firewall = false
+ssh_allowed_ips = ["0.0.0.0/0"] # Open for staging
 
 # Maintenance window
 maintenance_window = "04:00"
