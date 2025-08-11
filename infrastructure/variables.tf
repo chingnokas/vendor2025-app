@@ -63,3 +63,45 @@ variable "enable_ha" {
   type        = bool
   default     = false
 }
+
+variable "create_monitoring_pool" {
+  description = "Create a dedicated node pool for monitoring workloads"
+  type        = bool
+  default     = false
+}
+
+variable "monitoring_node_size" {
+  description = "Size of monitoring nodes"
+  type        = string
+  default     = "s-2vcpu-4gb"
+}
+
+variable "monitoring_node_count" {
+  description = "Number of monitoring nodes"
+  type        = number
+  default     = 1
+}
+
+variable "create_vpc" {
+  description = "Create a VPC for the cluster"
+  type        = bool
+  default     = false
+}
+
+variable "vpc_ip_range" {
+  description = "IP range for the VPC"
+  type        = string
+  default     = "10.10.0.0/16"
+}
+
+variable "create_firewall" {
+  description = "Create firewall rules for the cluster"
+  type        = bool
+  default     = true
+}
+
+variable "ssh_allowed_ips" {
+  description = "List of IP addresses allowed to SSH to nodes"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]  # Restrict this in production
+}
