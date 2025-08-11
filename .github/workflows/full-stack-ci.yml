@@ -257,12 +257,15 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📥 Try to download kubeconfig from infrastructure workflow
-        uses: actions/download-artifact@v4
+        uses: dawidd6/action-download-artifact@v3
         continue-on-error: true
         with:
+          workflow: infrastructure-ci.yml
           name: kubeconfig-${{ needs.check-infrastructure.outputs.environment }}
           path: ./
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          search_artifacts: true
+          if_no_artifact_found: warn
 
       - name: 🔧 Setup kubectl (if kubeconfig available)
         if: hashFiles('kubeconfig-*.yaml') != ''

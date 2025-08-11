@@ -25,7 +25,7 @@ variable "node_count" {
 variable "node_size" {
   description = "Size of worker nodes"
   type        = string
-  default     = "s-2vcpu-4gb"  # Upgraded from s-2vcpu-2gb
+  default     = "s-2vcpu-4gb" # Upgraded from s-2vcpu-2gb
 }
 
 variable "auto_scale" {
@@ -103,5 +103,5 @@ variable "create_firewall" {
 variable "ssh_allowed_ips" {
   description = "List of IP addresses allowed to SSH to nodes"
   type        = list(string)
-  default     = ["0.0.0.0/0"]  # Restrict this in production
+  default     = ["0.0.0.0/0"] # Restrict this in production
 }

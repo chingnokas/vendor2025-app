@@ -68,10 +68,10 @@ resource "digitalocean_kubernetes_cluster" "auth_stack" {
   tags = concat(var.tags, ["managed-by-opentofu", "project-auth-stack"])
 
   # Enable cluster monitoring and high availability
-  ha                        = var.enable_ha
-  surge_upgrade            = true
-  auto_upgrade             = true
-  
+  ha            = var.enable_ha
+  surge_upgrade = true
+  auto_upgrade  = true
+
   # Destroy protection for production
   lifecycle {
     prevent_destroy = false # Set to true for production
@@ -81,7 +81,7 @@ resource "digitalocean_kubernetes_cluster" "auth_stack" {
 # Additional node pool for monitoring workloads (optional)
 resource "digitalocean_kubernetes_node_pool" "monitoring_pool" {
   count = var.create_monitoring_pool ? 1 : 0
-  
+
   cluster_id = digitalocean_kubernetes_cluster.auth_stack.id
   name       = "monitoring-pool"
   size       = var.monitoring_node_size
@@ -109,7 +109,7 @@ resource "digitalocean_kubernetes_node_pool" "monitoring_pool" {
 # VPC for the cluster (optional but recommended)
 resource "digitalocean_vpc" "auth_stack_vpc" {
   count = var.create_vpc ? 1 : 0
-  
+
   name     = "${var.cluster_name}-vpc"
   region   = var.region
   ip_range = var.vpc_ip_range
@@ -118,7 +118,7 @@ resource "digitalocean_vpc" "auth_stack_vpc" {
 # Firewall rules for the cluster
 resource "digitalocean_firewall" "auth_stack_firewall" {
   count = var.create_firewall ? 1 : 0
-  
+
   name = "${var.cluster_name}-firewall"
 
   tags = [digitalocean_kubernetes_cluster.auth_stack.id]
